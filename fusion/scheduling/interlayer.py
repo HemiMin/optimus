@@ -1044,88 +1044,88 @@ class InterLayerReuse(object):
                         else:
                             is_full_buffer[idx] = False
 
-                    if not is_full_buffer[idx]:
-                        for src in self.network.prevs(l):
-                            if src in ext_inputs:
-                                if src is None:
-                                    src_layer = self.network.input_layer()
-                                else:
-                                    src_layer = self.network[src]
+                    #if not is_full_buffer[idx]:
+                    for src in self.network.prevs(l):
+                        if src in ext_inputs:
+                            if src is None:
+                                src_layer = self.network.input_layer()
+                            else:
+                                src_layer = self.network[src]
 
-                                print('before min_feature_footprint:',
-                                        str(min_feature_footprint))
-                                print('before add_one_line_footprint:',
-                                        str(add_one_line_footprint))
-                                min_feature_footprint += \
-                                    (src_layer.nofm
-                                     * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
-                                     * layer.wifm)
-                                add_one_line_footprint += \
-                                    (src_layer.nofm
-                                     * sca.s_h * layer.hstd
-                                     * layer.wifm)
-                                print('  src_layer:',src,':',src_layer)
-                                print('  min_feature_footprint1+',
-                                      str((src_layer.nofm
-                                     * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
-                                     * layer.wifm)),'=',min_feature_footprint)
-                                print('  (src_layer.nofm(',str(src_layer.nofm),
-                                      ')*h(',
-                                      str(min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)),
-                                      ')*layer.wifm(',
-                                      str(layer.wifm),'))')
+                            print('before min_feature_footprint:',
+                                    str(min_feature_footprint))
+                            print('before add_one_line_footprint:',
+                                    str(add_one_line_footprint))
+                            min_feature_footprint += \
+                                (src_layer.nofm
+                                 * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
+                                 * layer.wifm)
+                            add_one_line_footprint += \
+                                (src_layer.nofm
+                                 * sca.s_h * layer.hstd
+                                 * layer.wifm)
+                            print('  src_layer:',src,':',src_layer)
+                            print('  min_feature_footprint1+',
+                                  str((src_layer.nofm
+                                 * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
+                                 * layer.wifm)),'=',min_feature_footprint)
+                            print('  (src_layer.nofm(',str(src_layer.nofm),
+                                  ')*h(',
+                                  str(min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)),
+                                  ')*layer.wifm(',
+                                  str(layer.wifm),'))')
 
-                                print('  add_one_line_footprint1+',
-                                      str((src_layer.nofm
-                                     * sca.s_h * layer.hstd
-                                     * layer.wifm)),'=',add_one_line_footprint)
-                                print('  (src_layer.nofm(',str(src_layer.nofm),
-                                      ')*sca.s_h(',str(sca.s_h),
-                                      ')*layer.hstd(',str(layer.hstd),
-                                      ')*layer.wifm(',
-                                      str(layer.wifm),'))')
+                            print('  add_one_line_footprint1+',
+                                  str((src_layer.nofm
+                                 * sca.s_h * layer.hstd
+                                 * layer.wifm)),'=',add_one_line_footprint)
+                            print('  (src_layer.nofm(',str(src_layer.nofm),
+                                  ')*sca.s_h(',str(sca.s_h),
+                                  ')*layer.hstd(',str(layer.hstd),
+                                  ')*layer.wifm(',
+                                  str(layer.wifm),'))')
 
-                                ext_inputs.remove(src)
-                    if isinstance(layer, LocalRegionLayer) and is_full_buffer[idx]:
-                        #if is_full_buffer[idx]:
-                        print('before min_feature_footprint:',
-                                str(min_feature_footprint))
-                        print('before add_one_line_footprint:',
-                                str(add_one_line_footprint))
-                        min_feature_footprint += layer.nofm * minsize.h * layer.wofm
-                        add_one_line_footprint += layer.nofm * sca.s_h * layer.wofm
-                        print('  min_feature_footprint2+',
-                              'layer.norm(',str(layer.nofm),
-                              ') * minsize.h(', str(minsize.h),
-                              ') * layer.wofm(',str(layer.wofm),'):',
-                              str(layer.nofm*minsize.h*layer.wofm),
-                              '=',min_feature_footprint)
-                        print('  add_one_line_footprint2+',
-                              'layer.norm(',str(layer.nofm),
-                              ') * sca.s_h(', str(sca.s_h),
-                              ') * layer.wofm(',str(layer.wofm),'):',
-                              str(layer.nofm*sca.s_h*layer.wofm),
-                              '=',add_one_line_footprint)
-                        #else:
-                        #    k = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)
-                        #    print('before min_feature_footprint:',
-                        #            str(min_feature_footprint))
-                        #    print('before add_one_line_footprint:',
-                        #            str(add_one_line_footprint))
-                        #    min_feature_footprint += k * minsize.h * layer.wofm
-                        #    add_one_line_footprint += k * sca.s_h * layer.wofm
-                        #    print('  min_feature_footprint2.1+',
-                        #          'k(',str(k),
-                        #          ') * minsize.h(', str(minsize.h),
-                        #          ') * layer.wofm(',str(layer.wofm),'):',
-                        #          str(k*minsize.h*layer.wofm),
-                        #          '=',min_feature_footprint)
-                        #    print('  add_one_line_footprint2.1+',
-                        #          'k',str(k),
-                        #          ') * sca.s_h(', str(sca.s_h),
-                        #          ') * layer.wofm(',str(layer.wofm),'):',
-                        #          str(k*sca.s_h*layer.wofm),
-                        #          '=',add_one_line_footprint)
+                            ext_inputs.remove(src)
+                    if isinstance(layer, LocalRegionLayer):
+                        if is_full_buffer[idx]:
+                            print('before min_feature_footprint:',
+                                    str(min_feature_footprint))
+                            print('before add_one_line_footprint:',
+                                    str(add_one_line_footprint))
+                            min_feature_footprint += layer.nofm * minsize.h * layer.wofm
+                            add_one_line_footprint += layer.nofm * sca.s_h * layer.wofm
+                            print('  min_feature_footprint2+',
+                                  'layer.norm(',str(layer.nofm),
+                                  ') * minsize.h(', str(minsize.h),
+                                  ') * layer.wofm(',str(layer.wofm),'):',
+                                  str(layer.nofm*minsize.h*layer.wofm),
+                                  '=',min_feature_footprint)
+                            print('  add_one_line_footprint2+',
+                                  'layer.norm(',str(layer.nofm),
+                                  ') * sca.s_h(', str(sca.s_h),
+                                  ') * layer.wofm(',str(layer.wofm),'):',
+                                  str(layer.nofm*sca.s_h*layer.wofm),
+                                  '=',add_one_line_footprint)
+                        else:
+                            k = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)
+                            print('before min_feature_footprint:',
+                                    str(min_feature_footprint))
+                            print('before add_one_line_footprint:',
+                                    str(add_one_line_footprint))
+                            min_feature_footprint += k * minsize.h * layer.wofm
+                            add_one_line_footprint += k * sca.s_h * layer.wofm
+                            print('  min_feature_footprint2.1+',
+                                  'k(',str(k),
+                                  ') * minsize.h(', str(minsize.h),
+                                  ') * layer.wofm(',str(layer.wofm),'):',
+                                  str(k*minsize.h*layer.wofm),
+                                  '=',min_feature_footprint)
+                            print('  add_one_line_footprint2.1+',
+                                  'k',str(k),
+                                  ') * sca.s_h(', str(sca.s_h),
+                                  ') * layer.wofm(',str(layer.wofm),'):',
+                                  str(k*sca.s_h*layer.wofm),
+                                  '=',add_one_line_footprint)
 
 
                 for src_idx in self.dag_prev_dict[idx]:
@@ -1145,67 +1145,65 @@ class InterLayerReuse(object):
                             else:
                                 is_full_buffer[idx] = False
 
-                if isinstance(layer, ConvLayer):
-                    print('  is_full_buffer:',is_full_buffer[idx])
-                    if is_full_buffer[idx]:
-                        print('before min_feature_footprint:',
-                                str(min_feature_footprint))
-                        print('before add_one_line_footprint:',
-                                str(add_one_line_footprint))
-                        min_feature_footprint += layer.nofm * minsize.h * layer.wofm
-                        add_one_line_footprint += layer.nofm * sca.s_h * layer.wofm
-                        print('  min_feature_footprint3+',
-                              'layer.nofm(',str(layer.nofm),
-                              ') * minsize.h(', str(minsize.h),
-                              ') * layer.wofm(',str(layer.wofm),'):',
-                              str(layer.nofm*minsize.h*layer.wofm),
-                              '=',min_feature_footprint)
-                        print('  add_one_line_footprint3+',
-                              'layer.nofm(',str(layer.nofm),
-                              ') * sca.s_h(', str(sca.s_h),
-                              ') * layer.wofm(',str(layer.wofm),'):',
-                              str(layer.nofm*sca.s_h*layer.wofm),
-                              '=',add_one_line_footprint)
+                #if isinstance(layer, ConvLayer):
+                print('  is_full_buffer:',is_full_buffer[idx])
+                if is_full_buffer[idx]:
+                    print('before min_feature_footprint:',
+                            str(min_feature_footprint))
+                    print('before add_one_line_footprint:',
+                            str(add_one_line_footprint))
+                    min_feature_footprint += layer.nofm * minsize.h * layer.wofm
+                    add_one_line_footprint += layer.nofm * sca.s_h * layer.wofm
+                    print('  min_feature_footprint3+',
+                          'layer.nofm(',str(layer.nofm),
+                          ') * minsize.h(', str(minsize.h),
+                          ') * layer.wofm(',str(layer.wofm),'):',
+                          str(layer.nofm*minsize.h*layer.wofm),
+                          '=',min_feature_footprint)
+                    print('  add_one_line_footprint3+',
+                          'layer.nofm(',str(layer.nofm),
+                          ') * sca.s_h(', str(sca.s_h),
+                          ') * layer.wofm(',str(layer.wofm),'):',
+                          str(layer.nofm*sca.s_h*layer.wofm),
+                          '=',add_one_line_footprint)
 
-                    else:
-                        loop_lower_bound = self.loop_lower_bound(layer)
-                        k = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)
-                        print('  k:',k)
-                        print('  max(loop_lower_bound.k(',str(loop_lower_bound.k),
-                              '),loop_lower_bound.c(',str(loop_lower_bound.c),'))=',
-                              str(max(loop_lower_bound.k,loop_lower_bound.c)))
-                        print('  min(',str(max(loop_lower_bound.k,loop_lower_bound.c)),
-                              ',layer.nofm(',str(layer.nofm),'))=',
-                              str(min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)))
+                else:
+                    loop_lower_bound = self.loop_lower_bound(layer)
+                    k = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)
+                    print('  k:',k)
+                    print('  max(loop_lower_bound.k(',str(loop_lower_bound.k),
+                          '),loop_lower_bound.c(',str(loop_lower_bound.c),'))=',
+                          str(max(loop_lower_bound.k,loop_lower_bound.c)))
+                    print('  min(',str(max(loop_lower_bound.k,loop_lower_bound.c)),
+                          ',layer.nofm(',str(layer.nofm),'))=',
+                          str(min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)))
 
 
-                        print('before min_feature_footprint:',
-                                str(min_feature_footprint))
-                        print('before add_one_line_footprint:',
-                                str(add_one_line_footprint))
-                        min_feature_footprint += k * minsize.h * layer.wofm
-                        add_one_line_footprint += k * sca.s_h * layer.wofm
-                        print('  min_feature_footprint4+',
-                              'k(',str(k),
-                              ') * minsize.h(', str(minsize.h),
-                              ') * layer.wofm(',str(layer.wofm),'):',
-                              str(k*minsize.h*layer.wofm),
-                              '=',min_feature_footprint)
-                        print('  add_one_line_footprint4+',
-                              'k(',str(k),
-                              ') * sca.s_h(', str(sca.s_h),
-                              ') * layer.wofm(',str(layer.wofm),'):',
-                              str(k*sca.s_h*layer.wofm),
-                              '=',add_one_line_footprint)
+                    print('before min_feature_footprint:',
+                            str(min_feature_footprint))
+                    print('before add_one_line_footprint:',
+                            str(add_one_line_footprint))
+                    min_feature_footprint += k * minsize.h * layer.wofm
+                    add_one_line_footprint += k * sca.s_h * layer.wofm
+                    print('  min_feature_footprint4+',
+                          'k(',str(k),
+                          ') * minsize.h(', str(minsize.h),
+                          ') * layer.wofm(',str(layer.wofm),'):',
+                          str(k*minsize.h*layer.wofm),
+                          '=',min_feature_footprint)
+                    print('  add_one_line_footprint4+',
+                          'k(',str(k),
+                          ') * sca.s_h(', str(sca.s_h),
+                          ') * layer.wofm(',str(layer.wofm),'):',
+                          str(k*sca.s_h*layer.wofm),
+                          '=',add_one_line_footprint)
 
             max_kernel_size = 0
             print('calc kernel_size')
             for l in self.dag_vertex_list:
                 layer = self.network[l]
                 idx = self.dag_vertex_dict[l]
-                loop_lower_bound = self.loop_lower_bound(layer)
                 print(str(idx),':',l,':',layer )
-                print('is_full_buffer:',is_full_buffer[idx])
                 if isinstance(layer, ConvLayer):
                     kernel_size = 0
                     ki = layer.nifm;
@@ -1226,7 +1224,6 @@ class InterLayerReuse(object):
 
 
             print('max_kernel_size:',max_kernel_size)
-            max_kernel_size = 0
             min_feature_footprint += max_kernel_size;
             if (s - min_feature_footprint) > 0 \
                     and (add_one_line_footprint / (s - min_feature_footprint)) \
