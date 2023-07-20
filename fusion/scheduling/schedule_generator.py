@@ -65,6 +65,8 @@ class ScheduleGenerator(object):
 
     def hafs(self, fusion_group, dptable):
 
+        print('\n=====group')
+        print(fusion_group)
         if not isinstance(fusion_group, list):
             raise TypeError('HaFS: fusion_group must be a list.')
 
@@ -221,6 +223,7 @@ class ScheduleGenerator(object):
 
         level = self.resource.buffer_levels() - 2
         s = self.resource.buffer(level).capacity * self.resource.paras[level].count
+        print('find_uni_layer_schedule layer(',level,'):',g,':',layer)
         if s > layer.total_filter_size:
             is_filter_fit = True
 
@@ -238,6 +241,7 @@ class ScheduleGenerator(object):
                 if cost_t < cost:
                     cost, loop_block, loop_order = cost_t, loop_block_t, loop_order_t
 
+        print('loop_block:',loop_block)
         return cost, [loop_block], [loop_order], is_filter_fit
 
     def _find_uni_layer_schedule_others(self, g, mode):
@@ -282,6 +286,7 @@ class ScheduleGenerator(object):
                               z_fusion=self.z_fusion, d_fusion=self.d_fusion, womincost=self.womincost)
         ilr.sched(mode)
         if not ilr.valid or self.wofusion:
+            print('==group:',fusion_group,' not valid')
             return float('inf'), None, None, None, False
         else:
             cost, loop_block, loop_order, vertex_list = ilr.q, ilr.loop_block, ilr.loop_order, ilr.dag_vertex_list
@@ -296,15 +301,18 @@ class ScheduleGenerator(object):
         else:
             cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_multi_layer_schedule(g, mode)
 
+        print('cost:',cost)
         return cost, loop_block, loop_order, vertex_list, sfil_fit
 
     def mapping(self, g, loop_block_g, loop_order_g):
 
+        print('mapping')
         cost_inner_g = [None for _ in g]
         point_g = [None for _ in g]
         t = 0
         for layer_name, loop_block, loop_order in zip(g, loop_block_g, loop_order_g):
             layer = self.network[layer_name]
+            print('layer(',layer_name,'):',layer)
             if not isinstance(layer, ConvLayer):
                 cost_inner_g[t], point_g[t] = 0, None
                 t += 1
@@ -318,6 +326,7 @@ class ScheduleGenerator(object):
 
             s = self.resource.buffer(0).capacity
             actual_s = s * self.resource.paras[0].count
+            print('  s:',s,'actual_s:',actual_s)
             point_t, blocking_t, ordering_t, partition_t = None, None, None, None
             for scheduling in _unilayer_schedule_list_v1:
                 cost_t, loop_block_t, loop_order_t = \
@@ -406,13 +415,20 @@ def loop_order_generator(layer, loop_block, irrelevant):
     loop_order = [le.NUM - 1] * le.NUM
 
     order = 0
+    print('loop_order_generator')
+    print('irrelevant:', irrelevant)
     for i in irrelevant:
         if loop_block[i] < layer.dimension[i]:
+            print('loop_block[',i,'](',loop_block[i],')<layer.dimension[',i,'](',layer.dimension[i],')')
             loop_order[i] = order
+            print('loop_order[',i,']=',order)
             order += 1
     non_max_block = [i for i, e in enumerate(loop_block) if (e < layer.dimension[i] and i not in irrelevant)]
+
+    print('non_max_block',non_max_block)
     for i in non_max_block:
         loop_order[i] = order
+        print('loop_order[',i,']=',order)
         order += 1
 
     return loop_order
@@ -767,6 +783,7 @@ def _cwr_c_v2(layer, resource, loop_lower_bound):
 
 def _cwr_k_v2(layer, resource, loop_lower_bound):
     # irrelevant loop: c r d
+    print('cwr_k_v2')
     irrelevant = [le.D, le.R, le.C]
     p2 = resource.access_cost[2]
     p1 = resource.access_cost[1]
@@ -777,6 +794,7 @@ def _cwr_k_v2(layer, resource, loop_lower_bound):
     q2 = p1[2] + p2[2]
 
     s = resource.buffer(1).capacity
+    print('s:',s)
 
     bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
     bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
@@ -823,6 +841,7 @@ def _cwr_k_v2(layer, resource, loop_lower_bound):
 
 def _psumsr_v1(layer, capacity, loop_lower_bound):
 
+    print('psumsr_v1')
     # irrelevant loop: c
     irrelevant = [le.C]
     c = loop_lower_bound.c
@@ -876,6 +895,7 @@ def _psumsr_v1(layer, capacity, loop_lower_bound):
 
 def _cwr_c_v1(layer, capacity, loop_lower_bound):
 
+    print('cwr_c_v1')
     # irrelevant loop: k r d
     irrelevant = [le.D, le.R, le.K]
     c = layer.nifm
@@ -902,6 +922,7 @@ def _cwr_c_v1(layer, capacity, loop_lower_bound):
 
 def _cwr_k_v1(layer, capacity, loop_lower_bound):
 
+    print('cwr_k_v1')
     # irrelevant loop: c r d
     irrelevant = [le.D, le.R, le.C]
     k = layer.nofm
@@ -910,12 +931,23 @@ def _cwr_k_v1(layer, capacity, loop_lower_bound):
     d = layer.wfil
 
     s = capacity - k * c * r * d
+    print('s(',s,')/capacity(',capacity,')')
 
     rho = min(math.ceil(s / (c * layer.hstd * layer.wstd + k)), layer.nimg * layer.hofm * layer.wofm)
+    print('irrelevant:',irrelevant)
+    print('k,c,r,d:',k,',',c,',',r,',',d,',')
+    print('hstd,wstd:',layer.hstd,',',layer.wstd)
+    print('rho:',rho)
+    print('min(math.ceil(s / (c * layer.hstd * layer.wstd + k))=',
+            math.ceil(s/(c*layer.hstd*layer.wstd+k)),
+            ',layer.nimg * layer.hofm * layer.wofm)=',
+            layer.nimg * layer.hofm*layer.wofm)
     rho, b, h, w = _bhw_factorization(layer, rho, loop_lower_bound)
+    print('rho,b,h,w:',rho,',',b,',',h,',',w)
 
     c = min(math.ceil((capacity - b * h * w * k) / (b * h * w * layer.hstd * layer.wstd + r * d * k)), layer.nifm)
     loop_block = [d, r, c, w, h, k, b]
+    print('loop_block:',loop_block)
     loop_order = [le.NUM - 1] * le.NUM
     if s < 0 or any(i <= 0 for i in loop_block):
         return float('inf'), loop_block, loop_order
@@ -929,6 +961,7 @@ def _cwr_k_v1(layer, capacity, loop_lower_bound):
 
 def _filterr_v1(layer, capacity, loop_lower_bound):
 
+    print('filterr_v1')
     # irrelevant loop: b h w
     irrelevant = [le.W, le.H, le.B]
     b = loop_lower_bound.b
@@ -982,6 +1015,7 @@ def _filterr_v1(layer, capacity, loop_lower_bound):
 
 def _ifmapr_v1(layer, capacity, loop_lower_bound):
 
+    print('ifmapr_v1')
     # irrelevant loop: k
     irrelevant = [le.K]
     r = layer.hfil

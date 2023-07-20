@@ -87,6 +87,7 @@ class CostModel(object):
         Get per element # of access of Weight at current level.
         """
 
+        print('    get_fl_access:',level)
         if level == 0 and mac_capacity == 0:
             return layer.wofm * layer.hofm * layer.nimg
 
@@ -95,15 +96,37 @@ class CostModel(object):
                              point.loop_orders[le.C][level],
                              point.loop_orders[le.K][level])
 
+        print('      loop_orders[D]:',point.loop_orders[le.D][level])
+        print('      loop_orders[R]:',point.loop_orders[le.R][level])
+        print('      loop_orders[C]:',point.loop_orders[le.C][level])
+        print('      loop_orders[K]:',point.loop_orders[le.K][level])
+        print('      ex_order_index:',ex_order_index)
         w_exclusive = point.loop_orders[le.W][level] < ex_order_index
         h_exclusive = point.loop_orders[le.H][level] < ex_order_index
         b_exclusive = point.loop_orders[le.B][level] < ex_order_index
+        print('      loop_orders[W]:',point.loop_orders[le.W][level])
+        print('      loop_orders[H]:',point.loop_orders[le.H][level])
+        print('      loop_orders[B]:',point.loop_orders[le.B][level])
+        print('      exclusive w,h,b:', w_exclusive,',',h_exclusive,',',b_exclusive)
+
 
         whb_acc = (layer.wofm * layer.hofm * layer.nimg) / \
                   (point.loop_blockings[le.W][level - 1 + w_exclusive]
                    * point.loop_blockings[le.H][level - 1 + h_exclusive]
                    * point.loop_blockings[le.B][level - 1 + b_exclusive])
 
+        print('(layer.wofm(',layer.wofm,
+              ')*layer.hofm(',layer.hofm,
+              ')*layer.nimg(',layer.nimg,
+              '))/(loop_blockings[W][',level-1+w_exclusive,
+              '](',point.loop_blockings[le.W][level - 1 + w_exclusive],
+              ')*loop_blockings[H][',level-1+h_exclusive,
+              '](',point.loop_blockings[le.H][level - 1 + h_exclusive],
+              ')*loop_blockings[B][',level-1+b_exclusive,
+              '](',point.loop_blockings[le.H][level - 1 + b_exclusive],
+              '))')
+ 
+        print('      whb_acc:',whb_acc)
         return whb_acc
 
     @staticmethod
@@ -129,13 +152,17 @@ class CostModel(object):
         """
         Get the energy from current level of memory access
         """
+        print('get_level_access_unilayer:',level)
         buffer_access = list([0, 0, 0])
         for point, layer_name in zip(point_list, fusion_group):
             layer = self.network[layer_name]
+            print('  layer(',layer_name,'):',layer)
             if not isinstance(layer, ConvLayer):
                 continue
             buffer_access_one_layer = self.get_level_access_unilayer(point, layer, level)
+            print('buffer_access_one_layer:', buffer_access_one_layer)
             buffer_access = list(map(add, buffer_access_one_layer, buffer_access))
+        print('buffer_access:', buffer_access)
 
         return buffer_access
 
@@ -146,6 +173,8 @@ class CostModel(object):
         level_access = [self.get_if_access(level, point, layer, mac_capacity),
                         2 * self.get_of_access(level, point, layer, mac_capacity) - 1,
                         self.get_fl_access(level, point, layer, mac_capacity)]
+        print('layer_size:', layer_size)
+        print('level_access:', level_access)
 
         buffer_access_one_layer = list(map(mul, level_access, layer_size))
         buffer_access_one_layer = np.ceil(buffer_access_one_layer).astype(int).tolist()
@@ -155,6 +184,7 @@ class CostModel(object):
     def get_level_access_multilayer(self, point_list, fusion_group, level, is_filter_fit=False):
 
         assert level == self.resource.buffer_levels() - 1
+        print('get_level_access_multilayer:',level)
 
         mac_capacity = self.resource.mac_capacity
         fuse_ifmap_access, fuse_ofmap_access, fuse_filter_access = 0, 0, 0
@@ -163,10 +193,13 @@ class CostModel(object):
         ext_inputs = set()
         for point, layer_name in zip(point_list, fusion_group):
             layer = self.network[layer_name]
+            print('  layer(',layer_name,'):',layer)
             if isinstance(layer, ConvLayer):
                 fuse_filter_access += \
                     layer.total_filter_size \
                     * (1 if is_filter_fit else self.get_fl_access(level, point, layer, mac_capacity))
+                    
+                print('fuse_filter_access(is_filter_fit:',is_filter_fit,'):',fuse_filter_access)
             for nx in self.network.nexts(layer_name):
                 if nx not in fusion_group:
                     ext_outputs.add(layer_name)
@@ -184,6 +217,7 @@ class CostModel(object):
 
         buffer_access = [fuse_ifmap_access, fuse_ofmap_access, fuse_filter_access]
         buffer_access = np.ceil(buffer_access).astype(int).tolist()
+        print('buffer_access:',buffer_access)
         return buffer_access
 
     def get_array_access_and_cost(self, point, layer, level):
@@ -312,4 +346,5 @@ class CostModel(object):
                 for i in range(len(array_access)):
                     noc_cost += sum(array_access[i]) * array_cost[i]
 
+        print('access_list:', access_list)
         return access_list, levels_cost_breakdown, noc_cost, ops, sum(levels_cost)+noc_cost+ops
