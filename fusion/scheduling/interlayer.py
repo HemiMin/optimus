@@ -320,10 +320,12 @@ class InterLayerReuse(object):
         s = self.resource.buffer(level).capacity * self. resource.paras[level].count
         print('s(',level,'):',s)
 
-        if s < self.min_feature_footprint + self.fused_weight_size:
+        #if s < self.min_feature_footprint + self.fused_weight_size:
+        if s < self.min_required_mem_size:
             return False
 
-        if s >= self.fused_weight_size + self.min_feature_footprint:
+        #if s >= self.fused_weight_size + self.min_feature_footprint:
+        if s >= self.min_required_mem_size:
             self.sfil_fit = True
             self.tile_num = 1
 
@@ -573,6 +575,7 @@ class InterLayerReuse(object):
                 for l in self.dag_vertex_list:
                     idx = self.dag_vertex_dict[l]
                     layer = self.network[l]
+                    print(f'reslayer:{self.dag_vertex_list[idx]}')
                     if isinstance(layer, LocalRegionLayer):
                         continue
 
@@ -582,14 +585,17 @@ class InterLayerReuse(object):
                         k = layer.nofm
 
                     if self.dag_prev_dict[idx] and list(self.dag_prev_dict[idx])[0] in self.idx_dict:
-                        c = self.idx_dict[list(self.dag_prev_dict[idx])[0]]
+                        print(f'rescidx:{list(self.dag_prev_dict[idx])[0]}')
+                        c = min(res.x[self.idx_dict[list(self.dag_prev_dict[idx])[0]]], layer.nifm)
                     else:
                         c = layer.nifm
+                    print(f'resc:{c}')
                     self.loop_block[idx] = \
                         [layer.wfil, layer.hfil, math.ceil(c), layer.wofm, H[idx], math.ceil(k), b]
 
                     self.loop_order[idx] = \
                         schedule_generator.loop_order_generator(layer, self.loop_block[idx], irrelevant)
+                    print(f'resloop_block:{self.loop_block[idx]}')
 
             q = self.fused_weight_size * self.network.input_layer().nimg * h_m * q2 / (b * h) \
                 + self.fused_input_size * p2[0] + self.fused_output_size * p2[1]
@@ -953,6 +959,7 @@ class InterLayerReuse(object):
         b, h_m, idx_dict = args
 
         ineq_cons = []
+        eq_cons = []
         if b > 1:
             ineq_cons.append('x[0] - 1')
             ineq_cons.append('-x[0] + {nimg}'.format(nimg=self.network.input_layer().nimg))
@@ -1112,6 +1119,33 @@ class InterLayerReuse(object):
                 #layer_fmap_size[layer] = layer_fmap_size[layer][1:]+'+{}'.format(layer_ofmap_size[src_layer][1:])
 
                 buffer_const += '({fmap_size})+({kernel_size}),'.format(fmap_size=layer_fmap_size[layer], kernel_size=kernel_size[layer])
+
+            else:
+                print(f'con layer:{self.dag_vertex_list[idx]}')
+                if self.is_full_buffer[idx]:
+                    for pre in self.network.prevs(l):
+                        if pre in self.dag_vertex_dict:
+                            pidx = self.dag_vertex_dict[pre]
+                            player = self.network[pre]
+                            print(f'player:{self.dag_vertex_list[pidx]}')
+                            if pidx in idx_dict:
+                                ppidx = idx_dict[pidx]
+                                eq_cons.append('{oc} <= x[{pidx}] <= {oc}'.format(pidx=ppidx, oc=player.nofm))
+                                print('eq_cons:{}'.format(eq_cons[-1]))
+                else:
+                    if idx in idx_dict:
+                        cur_fidx = idx_dict[idx]
+                        for pre in self.network.prevs(l):
+                            if pre in self.dag_vertex_dict:
+                                pidx = self.dag_vertex_dict[pre]
+                                player = self.network[pre]
+                                print(f'player:{self.dag_vertex_list[pidx]}')
+                                if pidx in idx_dict:
+                                    ppidx = idx_dict[pidx]
+                                    eq_cons.append('{poc} <= x[{pidx}] <= {poc} if x[{idx}]>={oc} else {oc}-{oc}'.format(pidx=ppidx, poc=player.nofm, idx=cur_fidx, oc=layer.nofm))
+                                    print('eq_cons:{}'.format(eq_cons[-1]))
+
+
         buffer_const = buffer_const[:-1]+'])'
         print(f'buffer_const:{buffer_const}')
 
@@ -1135,6 +1169,10 @@ class InterLayerReuse(object):
         for ineq in ineq_cons:
             print(f'ineq:{ineq}')
             cons += ({'type': 'ineq', 'fun': lambda x, ineq=ineq: eval(ineq)}, )
+        #for eq in eq_cons:
+        #    print(f'eq:{eq}')
+        #    cons += ({'type': 'ineq', 'fun': lambda x, eq=eq: eval(eq)}, )
+
 
         cons_res = copy.copy(cons)
         print(f'cons_res:{cons_res}')
