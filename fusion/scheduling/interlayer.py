@@ -309,20 +309,21 @@ class InterLayerReuse(object):
         self.loop_block = [None for _ in self.dag_vertex_list]
         self.loop_order = [None for _ in self.dag_vertex_list]
 
-        self.min_feature_footprint, self.is_full_buffer, self.add_one_line_footprint, self.max_kernel_size = self._alternate()
+        self.min_feature_footprint, self.is_full_buffer, self.add_one_line_footprint, self.min_required_mem_size = self._alternate()
 
         print('\n||init_alternate_pair_optimus')
         if self.is_full_buffer is None:
+            print('is_full_buffer None')
             return False
 
         level = self.resource.buffer_levels() - 2
         s = self.resource.buffer(level).capacity * self. resource.paras[level].count
         print('s(',level,'):',s)
 
-        if s <= self.min_feature_footprint+self.max_kernel_size:
+        if s < self.min_feature_footprint + self.fused_weight_size:
             return False
 
-        if s >= self.fused_weight_size + self.min_feature_footprint - self.max_kernel_size:
+        if s >= self.fused_weight_size + self.min_feature_footprint:
             self.sfil_fit = True
             self.tile_num = 1
 
@@ -337,8 +338,8 @@ class InterLayerReuse(object):
             print('h_m:',h_m,'w_m:',w_m)
 
             s = s - self.fused_weight_size
-            line_num = math.floor((s - self.min_feature_footprint) /
-                                  self.add_one_line_footprint) + 1
+            line_num = max(math.floor((s - self.min_feature_footprint) /
+                                  self.add_one_line_footprint),0) + 1
             print('line_num:', line_num)
             if line_num > h_m:
                 h = h_m
@@ -398,8 +399,8 @@ class InterLayerReuse(object):
                 for pre in self.dag_prev_dict[idx]:
                     if self.is_full_buffer[pre]:
                         c = layer.nifm
-                        print(' pre:', pre)
-                        print('c:',c,'(is_full_buffer:',self.is_full_buffer[pre],')')
+                        print(' pre:', self.dag_vertex_list[pre])
+                        print(' c:',c,'(is_full_buffer:',self.is_full_buffer[pre],')')
 
                 if k < layer.nofm and c < layer.nifm:
                     c = layer.nifm
@@ -423,7 +424,7 @@ class InterLayerReuse(object):
                     w_m = self.network[l].wofm
             print('h_m:',h_m,'w_m:',w_m)
 
-            line_num = math.floor((s - self.min_feature_footprint-self.max_kernel_size) / self.add_one_line_footprint) + 1
+            line_num = math.floor((s - self.min_feature_footprint) / self.add_one_line_footprint) + 1
             print('line_num:', line_num)
             if line_num > h_m:
                 h = h_m
@@ -471,6 +472,7 @@ class InterLayerReuse(object):
                 layer = self.network[l]
                 print(idx,':',l,':',layer)
                 if isinstance(layer, LocalRegionLayer):
+                    print('continue')
                     continue
                 loop_lower_bound = self.loop_lower_bound(layer)
 
@@ -523,7 +525,9 @@ class InterLayerReuse(object):
                     x0[self.idx_dict[idx]] = loop_lower_bound.k
 
             x0 = np.asarray(x0)
+            print(f'x0:{x0}')
             res = minimize(fun, x0, method='COBYLA', constraints=con)
+            print(f'resx0:{res.x}')
 
             if res.success:
                 if b > 1:
@@ -532,19 +536,25 @@ class InterLayerReuse(object):
                 else:
                     b = 1
                     h = math.ceil(res.x[0])
+                print(f'minimizeh:{h}')
                 H = [None for _ in self.dag_vertex_list]
                 for l in reversed(self.dag_vertex_list):
                     idx = self.dag_vertex_dict[l]
                     layer = self.network[l]
+                    print(str(idx),':',l,':',layer )
                     if l in self.lasts:
                         H[idx] = int(self.scale[idx].s_h * h)
+                        print(f'H[{idx}]:{H[idx]}')
                         continue
 
                     h_tmp = None
                     for dst_idx in self.dag_next_dict[idx]:
+                        print(f'h_tmp:{h_tmp}')
                         dst = self.dag_vertex_list[dst_idx]
                         dst_layer = self.network[dst]
                         dst_h = H[dst_idx]
+                        print(f'dst_layer:{dst_layer}')
+                        print(f'dst_h:{dst_h}')
                         assert dst_h is not None
                         if isinstance(dst_layer, LocalRegionLayer):
                             hreg = dst_layer.hreg
@@ -552,10 +562,13 @@ class InterLayerReuse(object):
                             hreg = dst_layer.hfil
                         if h_tmp is None:
                             h_tmp = min((dst_h - 1) * dst_layer.hstd + hreg, layer.hofm)
+                            print(f'h_tmp({h_tmp})=min((dst_h({dst_h})-1)*dst_layer_hstd({dst_layer.hstd})+hreg({hreg}),hofm({layer.hofm})')
                         else:
                             if (dst_h - 1) * dst_layer.hstd + hreg > h_tmp:
                                 h_tmp = min((dst_h - 1) * dst_layer.hstd + hreg, layer.hofm)
+                                print(f'h_tmp({h_tmp})=min((dst_h({dst_h})-1)*dst_layer_hstd({dst_layer.hstd})+hreg({hreg}),hofm({layer.hofm})')
                     H[idx] = math.floor(h_tmp)
+                    print(f'H[{idx}]:{H[idx]}')
 
                 for l in self.dag_vertex_list:
                     idx = self.dag_vertex_dict[l]
@@ -607,7 +620,7 @@ class InterLayerReuse(object):
         level = self.resource.buffer_levels() - 2
         s = self.resource.buffer(level).capacity * self. resource.paras[level].count
 
-        if s <= self.min_feature_footprint:
+        if s < self.min_feature_footprint + self.fused_weight_size:
             return False
 
         if s >= self.fused_weight_size + self.min_feature_footprint:
@@ -847,6 +860,7 @@ class InterLayerReuse(object):
 
     def fun(self, args):
 
+        print('func')
         q0, q1, q2, b, h_m = args
         expr = ''
 
@@ -858,9 +872,11 @@ class InterLayerReuse(object):
         else:
             p2 = q2 * self.fused_weight_size * self.network.input_layer().nimg * h_m
             expr += '+ {p2} / x[0] '.format(p2=p2)
+        print(f'list:{self.dag_vertex_list}')
         for l in self.dag_vertex_list:
             idx = self.dag_vertex_dict[l]
             layer = self.network[l]
+            print(f'layer({idx}):{l}')
 
             if isinstance(layer, ConvLayer):
                 assert len(self.dag_prev_dict[idx]) <= 1
@@ -875,36 +891,46 @@ class InterLayerReuse(object):
                 if not k and not c:
                     c = True
 
+                print(f'k:{k},c:{c}')
+
                 if not k:
                     if idx in idx_dict:
                         cur_fidx = idx_dict[idx]
+                        print(f'cur_fidx:{cur_fidx},{self.dag_vertex_list[cur_fidx]}')
                     else:
                         cur_fidx = fidx
                         idx_dict[idx] = fidx
                         fidx += 1
+                        #print(f'cur_fidx:{cur_fidx},{self.dag_vertex_list[cur_fidx]}')
                     expr += '+ {p0} / x[{idx}] '.format(p0=p0, idx=cur_fidx)
+                print(f'idx_dict:{idx_dict}')
 
                 if not c:
-
                     if len(self.dag_prev_dict[idx]) == 1:
                         pidx = list(self.dag_prev_dict[idx])[0]
+                        print(f'pidx:{pidx},{self.dag_vertex_list[pidx]}')
                         if pidx in idx_dict:
                             cur_fidx = idx_dict[pidx]
+                            print(f'cur_fidx:{cur_fidx}')
                         else:
                             cy_idx = pidx
+                            print(f'cy_idx:{cy_idx}')
                             while len(self.dag_prev_dict[cy_idx]) == 1:
                                 if isinstance(self.network[self.dag_vertex_list[cy_idx]], ConvLayer):
                                     break
                                 cy_idx = list(self.dag_prev_dict[cy_idx])[0]
+                                print(f'cy_idx:{cy_idx}')
                             if len(self.dag_prev_dict[cy_idx]) == 1:
                                 if cy_idx in idx_dict:
                                     cur_fidx = idx_dict[cy_idx]
                                     idx_dict[pidx] = cur_fidx
+                                    print(f'idx_dict2:{idx_dict}')
                                 else:
                                     cur_fidx = fidx
                                     idx_dict[cy_idx] = cur_fidx
                                     idx_dict[pidx] = cur_fidx
                                     fidx += 1
+                                    print(f'idx_dict3:{idx_dict}')
                             elif len(self.dag_prev_dict[cy_idx]) == 0:
                                 continue
 
@@ -936,13 +962,23 @@ class InterLayerReuse(object):
 
         ext_inputs = set(self.ext_inputs_dict.keys())
         ss = ''
+        layer_oc = {}
+        ext_input_ic = {}
+        kernel_size = {}
+        layer_ofmap_size = {}
+        layer_fmap_size = {}
+        buffer_const = 'max(['
+
         for l in self.dag_vertex_list:
             idx = self.dag_vertex_dict[l]
             layer = self.network[l]
             sca = self.scale[idx]
             minsize = self.minSize[idx]
+            print(f'minsize:{minsize}')
             loop_lower_bound = self.loop_lower_bound(layer)
 
+            ic = str(0)
+            ih = str(0)
             if l in self.firsts:
                 if not self.is_full_buffer[idx]:
                     for src in self.network.prevs(l):
@@ -951,43 +987,133 @@ class InterLayerReuse(object):
                                 src_layer = self.network.input_layer()
                             else:
                                 src_layer = self.network[src]
+                            ic = str(src_layer.nofm)
                             m_h = min((minsize.h - 1) * layer.hstd + layer.hfil, src_layer.hofm)
                             s_h = sca.s_h * layer.hstd
                             if b > 1:
+                                ih = str(layer.hifm)
                                 ss += '+x[0]*{hh}*{w}*{k}'\
                                     .format(hh=layer.hifm, w=layer.wifm, k=src_layer.nofm)
                             else:
+                                oh = '({m_h}-{s_h}+{s_h}*x[0])'.format(m_h=m_h, s_h=s_h)
+                                ih = 'min({oh}-1)*{hstd} + {hfil},{hifm})'.format(oh=oh, hstd=layer.hstd, hfil=layer.hfil, hifm=layer.hifm)
                                 ss += '+({m_h}-{s_h}+{s_h}*x[0])*{w}*{k}' \
                                     .format(m_h=m_h, s_h=s_h, w=layer.wifm, k=src_layer.nofm)
+
+                            layer_oc[src_layer] = str(src_layer.nofm)
                             ext_inputs.remove(src)
+
+                print(f'layer_oc:{layer_oc}')
 
                 if isinstance(layer, LocalRegionLayer) and self.is_full_buffer[idx]:
                     if b > 1:
                         ss += '+x[0]*{hh}*{w}*{k}'.format(hh=layer.hofm, w=layer.wofm, k=layer.nofm)
+                        if layer in layer_ofmap_size:
+                            layer_ofmap_size[layer] += '+x[0]*{hh}*{w}*{k}'.format(hh=layer.hofm, w=layer.wofm, k=layer.nofm)
+                        else:
+                            layer_ofmap_size[layer] = '+x[0]*{hh}*{w}*{k}'.format(hh=layer.hofm, w=layer.wofm, k=layer.nofm)
+                        if layer in layer_fmap_size:
+                            layer_fmap_size[layer] += '+x[0]*{hh}*{w}*{k}'.format(hh=layer.hofm, w=layer.wofm, k=layer.nofm)
+                        else:
+                            layer_fmap_size[layer] = '+x[0]*{hh}*{w}*{k}'.format(hh=layer.hofm, w=layer.wofm, k=layer.nofm)
                     else:
                         ss += '+({m_h}-{s_h}+{s_h}*x[0])*{w}*{k}'\
                             .format(m_h=minsize.h, s_h=sca.s_h, w=layer.wofm, k=layer.nofm)
 
+                        if layer in layer_ofmap_size:
+                            layer_ofmap_size[layer] += '+({m_h}-{s_h}+{s_h}*x[0])*{w}*{k}'\
+                                .format(m_h=minsize.h, s_h=sca.s_h, w=layer.wofm, k=layer.nofm)
+                        else:
+                            layer_ofmap_size[layer] = '+({m_h}-{s_h}+{s_h}*x[0])*{w}*{k}'\
+                                .format(m_h=minsize.h, s_h=sca.s_h, w=layer.wofm, k=layer.nofm)
+                        if layer in layer_fmap_size:
+                            layer_fmap_size[layer] += '+({m_h}-{s_h}+{s_h}*x[0])*{w}*{k}'\
+                                .format(m_h=minsize.h, s_h=sca.s_h, w=layer.wofm, k=layer.nofm)
+                        else:
+                            layer_fmap_size[layer] = '+({m_h}-{s_h}+{s_h}*x[0])*{w}*{k}'\
+                                .format(m_h=minsize.h, s_h=sca.s_h, w=layer.wofm, k=layer.nofm)
+
+                    layer_oc[layer] = str(layer.nofm)
+            #else:
+            #    kernel_size[idx+1] += 'x[{idx}]'.format(idx=idx)
+
+
             if isinstance(layer, ConvLayer):
+                print(f'con layer:{self.dag_vertex_list[idx]}')
+                assert len(self.dag_prev_dict[idx]) <= 1
+                ocfull = True if self.is_full_buffer[idx] else False
+                icfull = False
+                for pre in self.dag_prev_dict[idx]:
+                    if self.is_full_buffer[pre]:
+                        icfull = True
+                if not ocfull and not icfull:
+                    icfull = True
+
+                if not l in self.firsts:
+                    if not icfull:
+                        pidx = list(self.dag_prev_dict[idx])[0]
+                        while not pidx in idx_dict:
+                            if len(self.dag_prev_dict[pidx]) == 1:
+                                pidx = list(self.dag_prev_dict[pidx])[0]
+                            else:
+                                assert pidx in idx_dict
+                        print(f'pidx:{pidx},{idx_dict}')
+                        ic = 'x[{pidx}]'.format(pidx=idx_dict[pidx])
+                    else:
+                        ic = str(self.network[list(self.network.prevs(l))[0]].nofm)
+                else:
+                    src = list(self.network.prevs(l))[0]
+                    if src is None:
+                        src_layer = self.network.input_layer()
+                    else:
+                        src_layer = self.network[src]
+                    ic = str(src_layer.nofm)
+
+                print(f'ic:{ic}')
+
                 if self.is_full_buffer[idx]:
                     if b > 1:
+                        oh = str(layer.hofm)
+                        ih = str(layer.hifm)
                         ss += '+x[0]*{hh}*{w}*{k}' \
                             .format(hh=layer.hofm, w=layer.wofm, k=layer.nofm)
                     else:
+                        oh = '({m_h}-{s_h}+{s_h}*x[0])'.format(m_h=minsize.h, s_h=sca.s_h)
+                        ih = 'min((({oh})-1)*{hstd} + {hfil},{hifm})'.format(oh=oh, hstd=layer.hstd, hfil=layer.hfil, hifm=layer.hifm)
                         ss += '+({m_h}-{s_h}+{s_h}*x[0])*{w}*{k}' \
                             .format(m_h=minsize.h, s_h=sca.s_h, w=layer.wofm, k=layer.nofm)
+                    layer_oc[layer] = str(layer.nofm)
+                    kernel_size[layer] = '{hfil}*{wfil}*({ic})*{oc}'.format(hfil=layer.hfil, wfil=layer.wfil, ic=ic, oc=layer.nofm)
+                    layer_ofmap_size[layer] = '{oh}*{ow}*{oc}'.format(oh=oh, ow=layer.wofm, oc=layer.nofm)
+                    layer_fmap_size[layer] = '(({ih})*{iw}*({ic}))+({ofmap}*(1 if {ic}=={nifm} else 32/{precision}))'.format(ih=ih, iw=layer.wifm, ic=ic, ofmap=layer_ofmap_size[layer], nifm=layer.nifm, precision=self.resource.precision)
 
                 else:
                     cur_fidx = idx_dict[idx]
                     if b > 1:
+                        oh = str(layer.hofm)
+                        ih = str(layer.hifm)
                         ss += '+x[0]*{hh}*{w}*x[{idx}]' \
                             .format(hh=layer.hofm, w=layer.wofm, idx=cur_fidx)
                     else:
+                        oh = '({m_h}-{s_h}+{s_h}*x[0])'.format(m_h=minsize.h, s_h=sca.s_h)
+                        ih = 'min((({oh})-1)*{hstd} + {hfil},{hifm})'.format(oh=oh, hstd=layer.hstd, hfil=layer.hfil, hifm=layer.hifm)
                         ss += '+({m_h}-{s_h}+{s_h}*x[0])*{w}*x[{idx}]' \
                             .format(m_h=minsize.h, s_h=sca.s_h, w=layer.wofm, idx=cur_fidx)
 
+                    layer_oc[layer] = 'x[{idx}]'.format(idx=cur_fidx)
+
                     ineq_cons.append('x[{idx}] - {k}'.format(idx=cur_fidx, k=loop_lower_bound.k))
                     ineq_cons.append('-x[{idx}] + {nofm}'.format(idx=cur_fidx, nofm=layer.nofm))
+                    kernel_size[layer] = '{hfil}*{wfil}*({ic})*x[{idx}]'.format(hfil=layer.hfil, wfil=layer.wfil, ic=ic, idx=cur_fidx)
+                    layer_ofmap_size[layer] = '{oh}*{ow}*x[{idx}]'.format(oh=oh, ow=layer.wofm, idx=cur_fidx)
+                    layer_fmap_size[layer] = '(({ih})*{iw}*({ic}))+({ofmap}*(1 if {ic}=={nifm} else 32/{precision}))'.format(ih=ih, iw=layer.wifm, ic=ic, ofmap=layer_ofmap_size[layer], nifm=layer.nifm, precision=self.resource.precision)
+                    #layer_fmap_size[layer] = '(({ih})*{iw}*({ic}))+({ofmap})'.format(ih=ih, iw=layer.wifm, ic=ic, ofmap=layer_ofmap_size[layer])
+
+                #layer_fmap_size[layer] = layer_fmap_size[layer][1:]+'+{}'.format(layer_ofmap_size[src_layer][1:])
+
+                buffer_const += '({fmap_size})+({kernel_size}),'.format(fmap_size=layer_fmap_size[layer], kernel_size=kernel_size[layer])
+        buffer_const = buffer_const[:-1]+'])'
+        print(f'buffer_const:{buffer_const}')
 
         for src in ext_inputs:
             if src is None:
@@ -1002,13 +1128,16 @@ class InterLayerReuse(object):
                 ineq_cons.append('-x[{pidx}] + {nofm}'.format(pidx=cur_fidx, nofm=src_layer.nofm))
 
         s = self.resource.buffer(1).capacity
-        ss = '-(' + ss[1:] + ')+{}'.format(s)
+        #ss = '-(' + ss[1:] + ')+{}'.format(s)
+        ss = '-(' + buffer_const + ')+{}'.format(s)
         ineq_cons.append(ss)
         cons = ()
         for ineq in ineq_cons:
+            print(f'ineq:{ineq}')
             cons += ({'type': 'ineq', 'fun': lambda x, ineq=ineq: eval(ineq)}, )
 
         cons_res = copy.copy(cons)
+        print(f'cons_res:{cons_res}')
         return cons_res
 
     def _alternate(self):
@@ -1017,6 +1146,7 @@ class InterLayerReuse(object):
         s = self.resource.buffer(level).capacity * self.resource.paras[level].count
 
         min_feature_footprint_t = s - 0.0000001
+        min_required_mem_size_t = s - 0.0000001
         add_one_line_footprint_t = float('inf')
 
         is_full_buffer_t = None
@@ -1028,6 +1158,10 @@ class InterLayerReuse(object):
             is_full_buffer = [None for _ in range(len(self.dag_vertex_list))]
             min_feature_footprint = 0
             add_one_line_footprint = 0
+            min_required_mem_size = 0
+            layer_ofmap_size = [0 for _ in range(len(self.dag_vertex_list))]
+            layer_fmap_size = [0 for _ in range(len(self.dag_vertex_list))]
+            layer_kernel_size = [0 for _ in range(len(self.dag_vertex_list))]
             ext_inputs = set(self.ext_inputs_dict.keys())
             for l in self.dag_vertex_list:
                 idx = self.dag_vertex_dict[l]
@@ -1064,6 +1198,10 @@ class InterLayerReuse(object):
                                 (src_layer.nofm
                                  * sca.s_h * layer.hstd
                                  * layer.wifm)
+                            layer_fmap_size[idx] += \
+                                (src_layer.nofm
+                                 * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
+                                 * layer.wifm)
                             print('  src_layer:',src,':',src_layer)
                             print('  min_feature_footprint1+',
                                   str((src_layer.nofm
@@ -1093,7 +1231,9 @@ class InterLayerReuse(object):
                             print('before add_one_line_footprint:',
                                     str(add_one_line_footprint))
                             min_feature_footprint += layer.nofm * minsize.h * layer.wofm
+                            layer_ofmap_size[idx] = layer.nofm * minsize.h * layer.wofm
                             add_one_line_footprint += layer.nofm * sca.s_h * layer.wofm
+                            layer_fmap_size[idx] += layer.nofm * minsize.h * layer.wofm
                             print('  min_feature_footprint2+',
                                   'layer.norm(',str(layer.nofm),
                                   ') * minsize.h(', str(minsize.h),
@@ -1113,7 +1253,9 @@ class InterLayerReuse(object):
                             print('before add_one_line_footprint:',
                                     str(add_one_line_footprint))
                             min_feature_footprint += k * minsize.h * layer.wofm
+                            layer_ofmap_size[idx] = k * minsize.h * layer.wofm
                             add_one_line_footprint += k * sca.s_h * layer.wofm
+                            layer_fmap_size[idx] += k * minsize.h * layer.wofm
                             print('  min_feature_footprint2.1+',
                                   'k(',str(k),
                                   ') * minsize.h(', str(minsize.h),
@@ -1144,6 +1286,7 @@ class InterLayerReuse(object):
                                 is_full_buffer[idx] = True
                             else:
                                 is_full_buffer[idx] = False
+                    layer_fmap_size[idx] += layer_ofmap_size[src_idx]
 
                 #if isinstance(layer, ConvLayer):
                 print('  is_full_buffer:',is_full_buffer[idx])
@@ -1153,7 +1296,9 @@ class InterLayerReuse(object):
                     print('before add_one_line_footprint:',
                             str(add_one_line_footprint))
                     min_feature_footprint += layer.nofm * minsize.h * layer.wofm
+                    layer_ofmap_size[idx] = layer.nofm * minsize.h * layer.wofm
                     add_one_line_footprint += layer.nofm * sca.s_h * layer.wofm
+                    layer_fmap_size[idx] += layer.nofm * minsize.h * layer.wofm
                     print('  min_feature_footprint3+',
                           'layer.nofm(',str(layer.nofm),
                           ') * minsize.h(', str(minsize.h),
@@ -1184,7 +1329,9 @@ class InterLayerReuse(object):
                     print('before add_one_line_footprint:',
                             str(add_one_line_footprint))
                     min_feature_footprint += k * minsize.h * layer.wofm
+                    layer_ofmap_size[idx] = k * minsize.h * layer.wofm
                     add_one_line_footprint += k * sca.s_h * layer.wofm
+                    layer_fmap_size[idx] += k * minsize.h * layer.wofm
                     print('  min_feature_footprint4+',
                           'k(',str(k),
                           ') * minsize.h(', str(minsize.h),
@@ -1207,29 +1354,38 @@ class InterLayerReuse(object):
                 if isinstance(layer, ConvLayer):
                     kernel_size = 0
                     ki = layer.nifm;
-                    #for src_idx in self.dag_prev_dict[idx]:
-                    #    if is_full_buffer[src_idx]:
-                    #        ki = layer.nifm 
-                    #    else:
-                    #        ki = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nifm)
+                    for src_idx in self.dag_prev_dict[idx]:
+                        if is_full_buffer[src_idx]:
+                            ki = layer.nifm 
+                        else:
+                            ki = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nifm)
 
                     if is_full_buffer[idx]:
                         kernel_size = layer.nofm * ki * layer.wfil * layer.hfil
                     else:
                         k = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)
                         kernel_size = k * ki * layer.wfil * layer.hfil
+                    layer_kernel_size[idx] = kernel_size
                     print('kernel_size:',kernel_size)
                     if (kernel_size > max_kernel_size):
                         max_kernel_size = kernel_size;
 
+            print(f'layer_fmap_size:{layer_fmap_size}')
+            print(f'layer_kernel_size:{layer_kernel_size}')
+            min_required_mem_size = max([sum(x) for x in zip(layer_fmap_size,layer_kernel_size)])
+            print(f'min_required_mem_size:{min_required_mem_size}')
+
 
             print('max_kernel_size:',max_kernel_size)
-            min_feature_footprint += max_kernel_size;
+            #min_feature_footprint += max_kernel_size;
+            print(f's:{s}, min_feature_footprint:{min_feature_footprint}')
+            print(f'one_line:{add_one_line_footprint}')
             if (s - min_feature_footprint) > 0 \
                     and (add_one_line_footprint / (s - min_feature_footprint)) \
                     < (add_one_line_footprint_t / (s - min_feature_footprint_t)):
                 min_feature_footprint_t = min_feature_footprint
                 is_full_buffer_t = is_full_buffer
                 add_one_line_footprint_t = add_one_line_footprint
-        return min_feature_footprint_t, is_full_buffer_t, add_one_line_footprint_t, max_kernel_size
+                min_required_mem_size_t = min_required_mem_size
+        return min_feature_footprint_t, is_full_buffer_t, add_one_line_footprint_t, min_required_mem_size_t
 

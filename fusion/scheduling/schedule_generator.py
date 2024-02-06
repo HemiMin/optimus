@@ -82,12 +82,14 @@ class ScheduleGenerator(object):
         nx = self._next(fusion_group)
         if len(g) > 0:
             cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule(g)
+            print(f'find_schedule_loop_block:{loop_block}')
             if cost == float("inf"):
                 dptable[dpkey] = [[]], float("inf")
                 return dptable[dpkey]
 
         if len(nx) == 0:
             cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule(g)
+            print(f'find_schedule_loop_block:{loop_block}')
             dptable[dpkey] = [[vertex_list, loop_block, loop_order, cost, sfil_fit]], cost
             return dptable[dpkey]
 
