@@ -309,7 +309,7 @@ class InterLayerReuse(object):
         self.loop_block = [None for _ in self.dag_vertex_list]
         self.loop_order = [None for _ in self.dag_vertex_list]
 
-        self.min_feature_footprint, self.is_full_buffer, self.add_one_line_footprint, self.min_required_mem_size = self._alternate()
+        self.min_feature_footprint, self.is_full_buffer, self.add_one_line_footprint, self.min_required_mem_size, self.line_num = self._alternate()
 
         print('\n||init_alternate_pair_optimus')
         if self.is_full_buffer is None:
@@ -340,8 +340,9 @@ class InterLayerReuse(object):
             print('h_m:',h_m,'w_m:',w_m)
 
             s = s - self.fused_weight_size
-            line_num = max(math.floor((s - self.min_feature_footprint) /
-                                  self.add_one_line_footprint),0) + 1
+            #line_num = max(math.floor((s - self.min_feature_footprint) /
+            #                      self.add_one_line_footprint),0) + 1
+            line_num = max(self.line_num, 1)
             print('line_num:', line_num)
             if line_num > h_m:
                 h = h_m
@@ -426,7 +427,9 @@ class InterLayerReuse(object):
                     w_m = self.network[l].wofm
             print('h_m:',h_m,'w_m:',w_m)
 
-            line_num = math.floor((s - self.min_feature_footprint) / self.add_one_line_footprint) + 1
+            #line_num = math.floor((s - self.min_feature_footprint) / self.add_one_line_footprint) + 1
+            line_num = self.line_num
+
             print('line_num:', line_num)
             if line_num > h_m:
                 h = h_m
@@ -609,6 +612,8 @@ class InterLayerReuse(object):
             self.q = q
             print('q:', q)
             self.tile_num = math.ceil(h_m * self.network.input_layer().nimg / (b * h))
+        else:
+            print('SqueezeNet')
 
         return True
 
@@ -1186,6 +1191,7 @@ class InterLayerReuse(object):
         min_feature_footprint_t = s - 0.0000001
         min_required_mem_size_t = s - 0.0000001
         add_one_line_footprint_t = float('inf')
+        min_line_num_t = 0
 
         is_full_buffer_t = None
         print('\n||alternate')
@@ -1200,6 +1206,8 @@ class InterLayerReuse(object):
             layer_ofmap_size = [0 for _ in range(len(self.dag_vertex_list))]
             layer_fmap_size = [0 for _ in range(len(self.dag_vertex_list))]
             layer_kernel_size = [0 for _ in range(len(self.dag_vertex_list))]
+            layer_add_one_line_size = [0 for _ in range(len(self.dag_vertex_list))]
+            layer_add_one_oh_line_size = [0 for _ in range(len(self.dag_vertex_list))]
             ext_inputs = set(self.ext_inputs_dict.keys())
             for l in self.dag_vertex_list:
                 idx = self.dag_vertex_dict[l]
@@ -1224,10 +1232,8 @@ class InterLayerReuse(object):
                             else:
                                 src_layer = self.network[src]
 
-                            print('before min_feature_footprint:',
-                                    str(min_feature_footprint))
-                            print('before add_one_line_footprint:',
-                                    str(add_one_line_footprint))
+                            print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                            print(f'  layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
                             min_feature_footprint += \
                                 (src_layer.nofm
                                  * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
@@ -1240,75 +1246,69 @@ class InterLayerReuse(object):
                                 (src_layer.nofm
                                  * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
                                  * layer.wifm)
+                            layer_add_one_line_size[idx] += \
+                                (src_layer.nofm
+                                 * sca.s_h * layer.hstd
+                                 * layer.wifm)
+
                             print('  src_layer:',src,':',src_layer)
-                            print('  min_feature_footprint1+',
+                            print('  src_fmsize=',
                                   str((src_layer.nofm
                                  * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
-                                 * layer.wifm)),'=',min_feature_footprint)
-                            print('  (src_layer.nofm(',str(src_layer.nofm),
-                                  ')*h(',
-                                  str(min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)),
-                                  ')*layer.wifm(',
-                                  str(layer.wifm),'))')
-
-                            print('  add_one_line_footprint1+',
-                                  str((src_layer.nofm
-                                 * sca.s_h * layer.hstd
-                                 * layer.wifm)),'=',add_one_line_footprint)
-                            print('  (src_layer.nofm(',str(src_layer.nofm),
-                                  ')*sca.s_h(',str(sca.s_h),
-                                  ')*layer.hstd(',str(layer.hstd),
-                                  ')*layer.wifm(',
-                                  str(layer.wifm),'))')
+                                 * layer.wifm)))
+                            print(f'  src_layer.nofm({src_layer.nofm}) * min(((minsize.h({minsize.h})-1)*layer.hstd({layer.hstd})+layer.hfil({layer.hfil})), src_layer.hofm({src_layer.hofm}))*layer.wifm({layer.wifm})')
+                            print('  add_one_line_size=',
+                                    str((src_layer.nofm*sca.s_h*layer.hstd*layer.wifm)))
+                            print(f'  src_layer.nofm({src_layer.nofm})*sca.s_h({sca.s_h})*layer.hstd({layer.hstd})*layer.wifm({layer.wifm}) ')
+                            print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                            print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
 
                             ext_inputs.remove(src)
                     if isinstance(layer, LocalRegionLayer):
                         if is_full_buffer[idx]:
-                            print('before min_feature_footprint:',
-                                    str(min_feature_footprint))
-                            print('before add_one_line_footprint:',
-                                    str(add_one_line_footprint))
+                            print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                            print(f'  layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
                             min_feature_footprint += layer.nofm * minsize.h * layer.wofm
                             layer_ofmap_size[idx] = layer.nofm * minsize.h * layer.wofm
                             add_one_line_footprint += layer.nofm * sca.s_h * layer.wofm
                             layer_fmap_size[idx] += layer.nofm * minsize.h * layer.wofm
-                            print('  min_feature_footprint2+',
-                                  'layer.norm(',str(layer.nofm),
-                                  ') * minsize.h(', str(minsize.h),
-                                  ') * layer.wofm(',str(layer.wofm),'):',
-                                  str(layer.nofm*minsize.h*layer.wofm),
-                                  '=',min_feature_footprint)
-                            print('  add_one_line_footprint2+',
-                                  'layer.norm(',str(layer.nofm),
-                                  ') * sca.s_h(', str(sca.s_h),
-                                  ') * layer.wofm(',str(layer.wofm),'):',
-                                  str(layer.nofm*sca.s_h*layer.wofm),
-                                  '=',add_one_line_footprint)
+                            layer_add_one_line_size[idx] += layer.nofm * sca.s_h * layer.wofm
+                            layer_add_one_oh_line_size[idx] += layer.nofm * sca.s_h * layer.wofm
+                            print('  ofmsize =',
+                                    str(layer.nofm*minsize.h*layer.wofm))
+                            print(f'  layer.nofm({layer.nofm})*minsize.h({minsize.h})*layer.wofm({layer.wofm})')
+                            print('  add_one_line_size =',
+                                    str(layer.nofm*sca.s_h*layer.wofm))
+                            print(f'  layer.nofm({layer.nofm})*sca.s_h({sca.s_h})*layer.wofm({layer.wofm})')
+                            print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                            print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
+                            print(f'  layer_ofmap_size[{idx}]={layer_ofmap_size[idx]}')
+                            print(f'  layer_one_oh_line_size[{idx}]={layer_add_one_oh_line_size[idx]}')
                         else:
+                            print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                            print(f'  layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
                             k = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)
-                            print('before min_feature_footprint:',
-                                    str(min_feature_footprint))
-                            print('before add_one_line_footprint:',
-                                    str(add_one_line_footprint))
                             min_feature_footprint += k * minsize.h * layer.wofm
                             layer_ofmap_size[idx] = k * minsize.h * layer.wofm
                             add_one_line_footprint += k * sca.s_h * layer.wofm
                             layer_fmap_size[idx] += k * minsize.h * layer.wofm
-                            print('  min_feature_footprint2.1+',
-                                  'k(',str(k),
-                                  ') * minsize.h(', str(minsize.h),
-                                  ') * layer.wofm(',str(layer.wofm),'):',
-                                  str(k*minsize.h*layer.wofm),
-                                  '=',min_feature_footprint)
-                            print('  add_one_line_footprint2.1+',
-                                  'k',str(k),
-                                  ') * sca.s_h(', str(sca.s_h),
-                                  ') * layer.wofm(',str(layer.wofm),'):',
-                                  str(k*sca.s_h*layer.wofm),
-                                  '=',add_one_line_footprint)
+                            layer_add_one_line_size[idx] += k*sca.s_h * layer.wofm
+                            layer_add_one_oh_line_size[idx] += k * sca.s_h * layer.wofm
+                            print('  ofmsize =',
+                                    str(k*minsize.h*layer.wofm))
+                            print(f'  layer.nofm({k})*minsize.h({minsize.h})*layer.wofm({layer.wofm})')
+                            print('  add_one_line_size =',
+                                    str(layer.nofm*sca.s_h*layer.wofm))
+                            print(f'  layer.nofm({k})*sca.s_h({sca.s_h})*layer.wofm({layer.wofm})')
+                            print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                            print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
+                            print(f'  layer_ofmap_size[{idx}]={layer_ofmap_size[idx]}')
+                            print(f'  layer_one_oh_line_size[{idx}]={layer_add_one_oh_line_size[idx]}')
 
 
                 for src_idx in self.dag_prev_dict[idx]:
+                    print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                    print(f'  layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
                     assert is_full_buffer[src_idx] is not None
                     if self.womincost:
                         is_full_buffer[idx] = True
@@ -1324,64 +1324,57 @@ class InterLayerReuse(object):
                                 is_full_buffer[idx] = True
                             else:
                                 is_full_buffer[idx] = False
+                    print(f'  src_idx:{src_idx}')
                     layer_fmap_size[idx] += layer_ofmap_size[src_idx]
+                    layer_add_one_line_size[idx] += layer_add_one_oh_line_size[src_idx]
+                    print(f'  src_layer_ofmap_size[{src_idx}]={layer_ofmap_size[src_idx]}')
+                    print(f'  src_layer_add_one_oh_line_size[{src_idx}]={layer_add_one_oh_line_size[src_idx]}')
+                    print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                    print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
 
                 #if isinstance(layer, ConvLayer):
                 print('  is_full_buffer:',is_full_buffer[idx])
                 if is_full_buffer[idx]:
-                    print('before min_feature_footprint:',
-                            str(min_feature_footprint))
-                    print('before add_one_line_footprint:',
-                            str(add_one_line_footprint))
+                    print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                    print(f'  layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
                     min_feature_footprint += layer.nofm * minsize.h * layer.wofm
                     layer_ofmap_size[idx] = layer.nofm * minsize.h * layer.wofm
                     add_one_line_footprint += layer.nofm * sca.s_h * layer.wofm
                     layer_fmap_size[idx] += layer.nofm * minsize.h * layer.wofm
-                    print('  min_feature_footprint3+',
-                          'layer.nofm(',str(layer.nofm),
-                          ') * minsize.h(', str(minsize.h),
-                          ') * layer.wofm(',str(layer.wofm),'):',
-                          str(layer.nofm*minsize.h*layer.wofm),
-                          '=',min_feature_footprint)
-                    print('  add_one_line_footprint3+',
-                          'layer.nofm(',str(layer.nofm),
-                          ') * sca.s_h(', str(sca.s_h),
-                          ') * layer.wofm(',str(layer.wofm),'):',
-                          str(layer.nofm*sca.s_h*layer.wofm),
-                          '=',add_one_line_footprint)
+                    layer_add_one_line_size[idx] += layer.nofm * sca.s_h * layer.wofm
+                    layer_add_one_oh_line_size[idx] += layer.nofm * sca.s_h * layer.wofm
+                    print('  ofmsize =',
+                            str(layer.nofm*minsize.h*layer.wofm))
+                    print(f'  layer.nofm({layer.nofm})*minsize.h({minsize.h})*layer.wofm({layer.wofm})')
+                    print('  add_one_line_size =',
+                            str(layer.nofm*sca.s_h*layer.wofm))
+                    print(f'  layer.nofm({layer.nofm})*sca.s_h({sca.s_h})*layer.wofm({layer.wofm})')
+                    print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                    print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
+                    print(f'  layer_ofmap_size[{idx}]={layer_ofmap_size[idx]}')
+                    print(f'  layer_one_oh_line_size[{idx}]={layer_add_one_oh_line_size[idx]}')
 
                 else:
+                    print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                    print(f'  layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
                     loop_lower_bound = self.loop_lower_bound(layer)
                     k = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)
-                    print('  k:',k)
-                    print('  max(loop_lower_bound.k(',str(loop_lower_bound.k),
-                          '),loop_lower_bound.c(',str(loop_lower_bound.c),'))=',
-                          str(max(loop_lower_bound.k,loop_lower_bound.c)))
-                    print('  min(',str(max(loop_lower_bound.k,loop_lower_bound.c)),
-                          ',layer.nofm(',str(layer.nofm),'))=',
-                          str(min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)))
-
-
-                    print('before min_feature_footprint:',
-                            str(min_feature_footprint))
-                    print('before add_one_line_footprint:',
-                            str(add_one_line_footprint))
                     min_feature_footprint += k * minsize.h * layer.wofm
                     layer_ofmap_size[idx] = k * minsize.h * layer.wofm
                     add_one_line_footprint += k * sca.s_h * layer.wofm
                     layer_fmap_size[idx] += k * minsize.h * layer.wofm
-                    print('  min_feature_footprint4+',
-                          'k(',str(k),
-                          ') * minsize.h(', str(minsize.h),
-                          ') * layer.wofm(',str(layer.wofm),'):',
-                          str(k*minsize.h*layer.wofm),
-                          '=',min_feature_footprint)
-                    print('  add_one_line_footprint4+',
-                          'k(',str(k),
-                          ') * sca.s_h(', str(sca.s_h),
-                          ') * layer.wofm(',str(layer.wofm),'):',
-                          str(k*sca.s_h*layer.wofm),
-                          '=',add_one_line_footprint)
+                    layer_add_one_line_size[idx] = k*sca.s_h*layer.wofm
+                    layer_add_one_oh_line_size[idx] += k * sca.s_h * layer.wofm
+                    print('  ofmsize =',
+                            str(k*minsize.h*layer.wofm))
+                    print(f'  layer.nofm({k})*minsize.h({minsize.h})*layer.wofm({layer.wofm})')
+                    print('  add_one_line_size =',
+                            str(layer.nofm*sca.s_h*layer.wofm))
+                    print(f'  layer.nofm({k})*sca.s_h({sca.s_h})*layer.wofm({layer.wofm})')
+                    print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                    print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
+                    print(f'  layer_ofmap_size[{idx}]={layer_ofmap_size[idx]}')
+                    print(f'  layer_one_oh_line_size[{idx}]={layer_add_one_oh_line_size[idx]}')
 
             max_kernel_size = 0
             print('calc kernel_size')
@@ -1410,8 +1403,16 @@ class InterLayerReuse(object):
 
             print(f'layer_fmap_size:{layer_fmap_size}')
             print(f'layer_kernel_size:{layer_kernel_size}')
-            min_required_mem_size = max([sum(x) for x in zip(layer_fmap_size,layer_kernel_size)])
+            required_mem_size = [sum(x) for x in zip(layer_fmap_size,layer_kernel_size)]
+            min_required_mem_size = max(required_mem_size)
+            min_required_mem_size_idx = max(range(len(required_mem_size)), key=required_mem_size.__getitem__)
+            print(f'required_mem_size:{required_mem_size}')
             print(f'min_required_mem_size:{min_required_mem_size}')
+            print(f'required_mem_size_idx:{min_required_mem_size_idx}')
+            print(f'layer_add_one_line_size:{layer_add_one_line_size}')
+
+            min_line_num = min(np.floor((s - np.array(required_mem_size))/np.array(layer_add_one_line_size)))
+            print(f'min_line_num:{min_line_num}')
 
 
             print('max_kernel_size:',max_kernel_size)
@@ -1425,5 +1426,6 @@ class InterLayerReuse(object):
                 is_full_buffer_t = is_full_buffer
                 add_one_line_footprint_t = add_one_line_footprint
                 min_required_mem_size_t = min_required_mem_size
-        return min_feature_footprint_t, is_full_buffer_t, add_one_line_footprint_t, min_required_mem_size_t
+                min_line_num_t = min_line_num
+        return min_feature_footprint_t, is_full_buffer_t, add_one_line_footprint_t, min_required_mem_size_t, min_line_num_t
 
