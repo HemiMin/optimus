@@ -6,7 +6,7 @@ import copy
 from collections import namedtuple
 
 from .. import util
-from .layer import ConvLayer, LocalRegionLayer
+from .layer import ConvLayer, LocalRegionLayer, ConcatLayer
 from .network import Network
 from .resource import Resource
 from . import schedule_generator
@@ -1267,6 +1267,41 @@ class InterLayerReuse(object):
                         else:
                             is_full_buffer[idx] = False
 
+                for dst_idx in self.dag_next_dict[idx]:
+                    dst = self.dag_vertex_list[dst_idx]
+                    dst_layer = self.network[dst]
+                    if isinstance(dst_layer, ConcatLayer):
+                        is_full_buffer[idx] = True
+
+                for src_idx in self.dag_prev_dict[idx]:
+                    assert is_full_buffer[src_idx] is not None
+                    if self.womincost:
+                        is_full_buffer[idx] = True
+                    else:
+                        if isinstance(layer, LocalRegionLayer):
+                            if is_full_buffer[idx] is None:
+                                is_full_buffer[idx] = is_full_buffer[src_idx]
+                            else:
+                                is_full_buffer[idx] \
+                                    = (is_full_buffer[idx] and is_full_buffer[src_idx]) or isinstance(layer, ConcatLayer)
+                        else:
+                            if not is_full_buffer[src_idx]:
+                                is_full_buffer[idx] = True
+                            else:
+                                is_full_buffer[idx] = False
+
+                for src_dix in self.dag_prev_dict[idx]:
+                    if isinstance(layer, LocalRegionLayer):
+                        is_full_buffer[src_idx] = is_full_buffer[idx]
+
+            for l in self.dag_vertex_list:
+                idx = self.dag_vertex_dict[l]
+                layer = self.network[l]
+                sca = self.scale[idx]
+                minsize = self.minSize[idx]
+                print(str(idx),':',l,':',layer )
+
+                if l in self.firsts:
                     #if not is_full_buffer[idx]:
                     for src in self.network.prevs(l):
                         if src in ext_inputs:
@@ -1348,25 +1383,30 @@ class InterLayerReuse(object):
                             print(f'  layer_ofmap_size[{idx}]={layer_ofmap_size[idx]}')
                             print(f'  layer_one_oh_line_size[{idx}]={layer_add_one_oh_line_size[idx]}')
 
+                #for dst_idx in self.dag_next_dict[idx]:
+                #    dst = self.dag_vertex_list[dst_idx]
+                #    dst_layer = self.network[dst]
+                #    if isinstance(dst_layer, ConcatLayer):
+                #        is_full_buffer[idx] = True
 
                 for src_idx in self.dag_prev_dict[idx]:
                     print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
                     print(f'  layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
-                    assert is_full_buffer[src_idx] is not None
-                    if self.womincost:
-                        is_full_buffer[idx] = True
-                    else:
-                        if isinstance(layer, LocalRegionLayer):
-                            if is_full_buffer[idx] is None:
-                                is_full_buffer[idx] = is_full_buffer[src_idx]
-                            else:
-                                is_full_buffer[idx] \
-                                    = is_full_buffer[idx] and is_full_buffer[src_idx]
-                        else:
-                            if not is_full_buffer[src_idx]:
-                                is_full_buffer[idx] = True
-                            else:
-                                is_full_buffer[idx] = False
+                    #assert is_full_buffer[src_idx] is not None
+                    #if self.womincost:
+                    #    is_full_buffer[idx] = True
+                    #else:
+                    #    if isinstance(layer, LocalRegionLayer):
+                    #        if is_full_buffer[idx] is None:
+                    #            is_full_buffer[idx] = is_full_buffer[src_idx]
+                    #        else:
+                    #            is_full_buffer[idx] \
+                    #                = (is_full_buffer[idx] and is_full_buffer[src_idx]) or isinstance(layer, ConcatLayer)
+                    #    else:
+                    #        if not is_full_buffer[src_idx]:
+                    #            is_full_buffer[idx] = True
+                    #        else:
+                    #            is_full_buffer[idx] = False
                     print(f'  src_idx:{src_idx}')
                     print(f'  src_is_fullbuffer:{is_full_buffer[src_idx]}')
                     print(f'  is_fullbuffer:{is_full_buffer[idx]}')
@@ -1377,9 +1417,37 @@ class InterLayerReuse(object):
                     print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
                     print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
 
-                for src_dix in self.dag_prev_dict[idx]:
-                    if isinstance(layer, LocalRegionLayer):
-                        is_full_buffer[src_idx] = is_full_buffer[idx]
+
+                #for src_dix in self.dag_prev_dict[idx]:
+                #    if isinstance(layer, LocalRegionLayer):
+                #        is_full_buffer[src_idx] = is_full_buffer[idx]
+
+                for src in self.network.prevs(l):
+                    if src in ext_inputs:
+                        if src is None:
+                            src_layer = self.network.input_layer()
+                        else:
+                            src_layer = self.network[src]
+                        if not isinstance(layer, LocalRegionLayer):
+                            layer_fmap_size[idx] += \
+                                (src_layer.nofm
+                                 * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
+                                 * layer.wifm)
+                            layer_add_one_line_size[idx] += \
+                                (src_layer.nofm
+                                 * sca.s_h * layer.hstd
+                                 * layer.wifm)
+                        else:
+                            k = min(max(self.loop_lower_bound(src_layer).k, self.loop_lower_bound(src_layer).c), src_layer.nofm)
+                            if is_full_buffer[idx]:
+                                layer_fmap_size[idx] += src_layer.nofm * minsize.h * layer.wofm
+                                layer_add_one_line_size[idx] += src_layer.nofm * sca.s_h * layer.wofm
+                                layer_add_one_oh_line_size[idx] += src_layer.nofm * sca.s_h * layer.wofm
+                            else:
+                                layer_fmap_size[idx] += k * minsize.h * layer.wofm
+                                layer_add_one_line_size[idx] += k*sca.s_h * layer.wofm
+                                layer_add_one_oh_line_size[idx] += k * sca.s_h * layer.wofm
+
 
                 #if isinstance(layer, ConvLayer):
                 print('  is_full_buffer:',is_full_buffer[idx])
