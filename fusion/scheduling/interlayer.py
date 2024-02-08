@@ -275,6 +275,7 @@ class InterLayerReuse(object):
                 continue
 
             h_tmp, w_tmp = None, None
+            h_check, w_check = None, None
             for dst_idx in self.dag_next_dict[idx]:
                 dst = self.dag_vertex_list[dst_idx]
                 dst_layer = self.network[dst]
@@ -299,11 +300,23 @@ class InterLayerReuse(object):
                     if (dst_minsize.w - 1) * dst_layer.wstd + wreg > w_tmp:
                         w_tmp = (dst_minsize.w - 1) * dst_layer.wstd + wreg
                         w_tmp = layer.wofm if w_tmp > layer.wofm else w_tmp
+                print(f'\th_check:{dst_minsize.h/hreg},w_check:{dst_minsize.w/wreg}')
+                if h_check is None and w_check is None:
+                    h_check = dst_minsize.h/hreg
+                    w_check = dst_minsize.w/wreg
+                else:
+                    if h_check != dst_minsize.h/hreg or w_check != dst_minsize.w/wreg:
+                        h_check = dst_minsize.h/hreg
+                        w_check = dst_minsize.w/wreg
+                        return False
+
             self.minSize[idx] = InterLayerReuse.MinSize(h_tmp, w_tmp)
             print('minsize2:',self.minSize[idx])
+        return True
 
     def _init_alternate_pair_optimus(self):
-        self._init_scale()
+        if not self._init_scale():
+            return False
         irrelevant = [le.D, le.R, le.K, le.C]
         print('irrelevant:',irrelevant)
         self.loop_block = [None for _ in self.dag_vertex_list]
@@ -960,6 +973,17 @@ class InterLayerReuse(object):
         v = lambda x: eval(expr)
         return v
 
+    def get_pidx(self, idx_dict, pidx):
+        print(f'get_pidx:{self.dag_prev_dict}')
+        if pidx in self.dag_prev_dict:
+            for ppidx in self.dag_prev_dict[pidx]:
+                if ppidx not in idx_dict:
+                    return self.get_pidx(idx_dict, ppidx)
+                else:
+                    return ppidx
+        else:
+            return -1
+
     def con(self, args):
         b, h_m, idx_dict = args
 
@@ -1137,6 +1161,15 @@ class InterLayerReuse(object):
                                 ppidx = idx_dict[pidx]
                                 eq_cons.append('{oc} <= x[{pidx}] <= {oc}'.format(pidx=ppidx, oc=player.nofm))
                                 print('eq_cons:{}'.format(eq_cons[-1]))
+                            else:
+                                pidx = self.get_pidx(idx_dict, pidx)
+                                if not pidx == -1 and not pidx is None: 
+                                    print(f'pplayer:{self.dag_vertex_list[pidx]}')
+                                    ppidx = idx_dict[pidx]
+                                    eq_cons.append('{poc} <= x[{pidx}] <= {poc}'.format(pidx=ppidx, poc=player.nofm, idx=cur_fidx, oc=layer.nofm))
+                                    print('eq_cons:{}'.format(eq_cons[-1]))
+                                else:
+                                    print('no player')
                 else:
                     if idx in idx_dict:
                         cur_fidx = idx_dict[idx]
@@ -1149,6 +1182,15 @@ class InterLayerReuse(object):
                                     ppidx = idx_dict[pidx]
                                     eq_cons.append('{poc} <= x[{pidx}] <= {poc} if x[{idx}]>={oc} else {oc}-{oc}'.format(pidx=ppidx, poc=player.nofm, idx=cur_fidx, oc=layer.nofm))
                                     print('eq_cons:{}'.format(eq_cons[-1]))
+                                else:
+                                    pidx = self.get_pidx(idx_dict, pidx)
+                                    if not pidx == -1: 
+                                        print(f'pplayer:{self.dag_vertex_list[pidx]}')
+                                        ppidx = idx_dict[pidx]
+                                        eq_cons.append('{poc} <= x[{pidx}] <= {poc} if x[{idx}]>={oc} else {oc}-{oc}'.format(pidx=ppidx, poc=player.nofm, idx=cur_fidx, oc=layer.nofm))
+                                        print('eq_cons:{}'.format(eq_cons[-1]))
+                                    else:
+                                        print('no player')
 
 
         buffer_const = buffer_const[:-1]+'])'
@@ -1319,19 +1361,25 @@ class InterLayerReuse(object):
                                 is_full_buffer[idx] = is_full_buffer[src_idx]
                             else:
                                 is_full_buffer[idx] \
-                                    = is_full_buffer[idx] or is_full_buffer[src_idx]
+                                    = is_full_buffer[idx] and is_full_buffer[src_idx]
                         else:
                             if not is_full_buffer[src_idx]:
                                 is_full_buffer[idx] = True
                             else:
                                 is_full_buffer[idx] = False
                     print(f'  src_idx:{src_idx}')
+                    print(f'  src_is_fullbuffer:{is_full_buffer[src_idx]}')
+                    print(f'  is_fullbuffer:{is_full_buffer[idx]}')
                     layer_fmap_size[idx] += layer_ofmap_size[src_idx] * (1 if is_full_buffer[src_idx] else 32/self.resource.precision)
                     layer_add_one_line_size[idx] += layer_add_one_oh_line_size[src_idx] * (1 if is_full_buffer[src_idx] else 32/self.resource.precision)
                     print(f'  src_layer_ofmap_size[{src_idx}]={layer_ofmap_size[src_idx]}')
                     print(f'  src_layer_add_one_oh_line_size[{src_idx}]={layer_add_one_oh_line_size[src_idx]}')
                     print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
                     print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
+
+                for src_dix in self.dag_prev_dict[idx]:
+                    if isinstance(layer, LocalRegionLayer):
+                        is_full_buffer[src_idx] = is_full_buffer[idx]
 
                 #if isinstance(layer, ConvLayer):
                 print('  is_full_buffer:',is_full_buffer[idx])
