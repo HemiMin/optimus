@@ -1208,6 +1208,7 @@ class InterLayerReuse(object):
             layer_kernel_size = [0 for _ in range(len(self.dag_vertex_list))]
             layer_add_one_line_size = [0 for _ in range(len(self.dag_vertex_list))]
             layer_add_one_oh_line_size = [0 for _ in range(len(self.dag_vertex_list))]
+            layer_oc = [0 for _ in range(len(self.dag_vertex_list))]
             ext_inputs = set(self.ext_inputs_dict.keys())
             for l in self.dag_vertex_list:
                 idx = self.dag_vertex_dict[l]
@@ -1325,8 +1326,8 @@ class InterLayerReuse(object):
                             else:
                                 is_full_buffer[idx] = False
                     print(f'  src_idx:{src_idx}')
-                    layer_fmap_size[idx] += layer_ofmap_size[src_idx]
-                    layer_add_one_line_size[idx] += layer_add_one_oh_line_size[src_idx]
+                    layer_fmap_size[idx] += layer_ofmap_size[src_idx] * (1 if is_full_buffer[src_idx] else 32/self.resource.precision)
+                    layer_add_one_line_size[idx] += layer_add_one_oh_line_size[src_idx] * (1 if is_full_buffer[src_idx] else 32/self.resource.precision)
                     print(f'  src_layer_ofmap_size[{src_idx}]={layer_ofmap_size[src_idx]}')
                     print(f'  src_layer_add_one_oh_line_size[{src_idx}]={layer_add_one_oh_line_size[src_idx]}')
                     print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
