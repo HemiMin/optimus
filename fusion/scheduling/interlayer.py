@@ -402,8 +402,8 @@ class InterLayerReuse(object):
                 idx = self.dag_vertex_dict[l]
                 layer = self.network[l]
                 print(idx,':',l,':',layer)
-                if isinstance(layer, LocalRegionLayer):
-                    continue
+                #if isinstance(layer, LocalRegionLayer):
+                #    continue
                 loop_lower_bound = self.loop_lower_bound(layer)
                 kk = min(max(loop_lower_bound.k, loop_lower_bound.c), layer.nofm)
                 print('kk:',kk)
@@ -421,10 +421,16 @@ class InterLayerReuse(object):
                 if k < layer.nofm and c < layer.nifm:
                     c = layer.nifm
                     print('c:',c,'(k(',k,')<layer.nofm(',layer.nofm,') and c(',c,')<layer.nifm(',layer.nifm,')')
-                self.loop_block[idx] = [layer.wfil, layer.hfil, c, layer.wofm, H[idx], k, b]
-                print('loop_block:[kw:',layer.wfil,',kh:',layer.hfil,',ic:',c,',ow:',layer.wofm,',oh:',H[idx],',oc:',k,',b:',b,']')
-                self.loop_order[idx] = schedule_generator.loop_order_generator(layer, self.loop_block[idx], irrelevant)
-                print('loop_order:',self.loop_order[idx])
+                if isinstance(layer, LocalRegionLayer):
+                    c = min(k,c)
+                    k = min(k,c)
+                    self.loop_block[idx] = [layer.wreg, layer.hreg, c, layer.wofm, H[idx], k, b]
+                    print('loop_block:[kw:',layer.wreg,',kh:',layer.hreg,',ic:',c,',ow:',layer.wofm,',oh:',H[idx],',oc:',k,',b:',b,']')
+                else:
+                    self.loop_block[idx] = [layer.wfil, layer.hfil, c, layer.wofm, H[idx], k, b]
+                    print('loop_block:[kw:',layer.wfil,',kh:',layer.hfil,',ic:',c,',ow:',layer.wofm,',oh:',H[idx],',oc:',k,',b:',b,']')
+                    self.loop_order[idx] = schedule_generator.loop_order_generator(layer, self.loop_block[idx], irrelevant)
+                    print('loop_order:',self.loop_order[idx])
 
         else:
             if self.z_fusion or self.d_fusion:
@@ -489,9 +495,9 @@ class InterLayerReuse(object):
                 idx = self.dag_vertex_dict[l]
                 layer = self.network[l]
                 print(idx,':',l,':',layer)
-                if isinstance(layer, LocalRegionLayer):
-                    print('continue')
-                    continue
+                #if isinstance(layer, LocalRegionLayer):
+                #    print('continue')
+                #    continue
                 loop_lower_bound = self.loop_lower_bound(layer)
 
                 k = layer.nofm if self.is_full_buffer[idx] \
@@ -508,11 +514,18 @@ class InterLayerReuse(object):
                 if k < layer.nofm and c < layer.nifm:
                     c = layer.nifm
                     print('c:',c,'(k(',k,')<layer.nofm(',layer.nofm,') and c(',c,')<layer.nifm(',layer.nifm,')')
-                self.loop_block[idx] = [layer.wfil, layer.hfil, c, layer.wofm, H[idx], k, b]
-                print('loop_block:[kw:',layer.wfil,',kh:',layer.hfil,',ic:',c,',ow:',layer.wofm,',oh:',H[idx],',oc:',k,',b:',b,']')
-                self.loop_order[idx] = \
-                    schedule_generator.loop_order_generator(layer, self.loop_block[idx], irrelevant)
-                print('loop_order:',self.loop_order[idx])
+
+                if isinstance(layer, LocalRegionLayer):
+                    c = min(k,c)
+                    k = min(k,c)
+                    self.loop_block[idx] = [layer.wreg, layer.hreg, c, layer.wofm, H[idx], k, b]
+                    print('loop_block:[kw:',layer.wreg,',kh:',layer.hreg,',ic:',c,',ow:',layer.wofm,',oh:',H[idx],',oc:',k,',b:',b,']')
+                else:
+                    self.loop_block[idx] = [layer.wfil, layer.hfil, c, layer.wofm, H[idx], k, b]
+                    print('loop_block:[kw:',layer.wfil,',kh:',layer.hfil,',ic:',c,',ow:',layer.wofm,',oh:',H[idx],',oc:',k,',b:',b,']')
+                    self.loop_order[idx] = \
+                        schedule_generator.loop_order_generator(layer, self.loop_block[idx], irrelevant)
+                    print('loop_order:',self.loop_order[idx])
 
                 self.tile_num = math.ceil(h_m * self.network.input_layer().nimg / (b * h))
                 print('tile_num:',self.tile_num)
@@ -592,8 +605,6 @@ class InterLayerReuse(object):
                     idx = self.dag_vertex_dict[l]
                     layer = self.network[l]
                     print(f'reslayer:{self.dag_vertex_list[idx]}')
-                    if isinstance(layer, LocalRegionLayer):
-                        continue
 
                     if idx in self.idx_dict:
                         k = res.x[self.idx_dict[idx]]
@@ -606,11 +617,18 @@ class InterLayerReuse(object):
                     else:
                         c = layer.nifm
                     print(f'resc:{c}')
-                    self.loop_block[idx] = \
-                        [layer.wfil, layer.hfil, math.ceil(c), layer.wofm, H[idx], math.ceil(k), b]
 
-                    self.loop_order[idx] = \
-                        schedule_generator.loop_order_generator(layer, self.loop_block[idx], irrelevant)
+                    if isinstance(layer, LocalRegionLayer):
+                        c = min(k,c)
+                        k = min(k,c)
+                        self.loop_block[idx] = \
+                            [layer.wreg, layer.hreg, math.ceil(c), layer.wofm, H[idx], math.ceil(k), b]
+                    else:
+                        self.loop_block[idx] = \
+                            [layer.wfil, layer.hfil, math.ceil(c), layer.wofm, H[idx], math.ceil(k), b]
+
+                        self.loop_order[idx] = \
+                            schedule_generator.loop_order_generator(layer, self.loop_block[idx], irrelevant)
                     print(f'resloop_block:{self.loop_block[idx]}')
 
             q = self.fused_weight_size * self.network.input_layer().nimg * h_m * q2 / (b * h) \
@@ -1389,67 +1407,7 @@ class InterLayerReuse(object):
                 #    if isinstance(dst_layer, ConcatLayer):
                 #        is_full_buffer[idx] = True
 
-                for src_idx in self.dag_prev_dict[idx]:
-                    print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
-                    print(f'  layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
-                    #assert is_full_buffer[src_idx] is not None
-                    #if self.womincost:
-                    #    is_full_buffer[idx] = True
-                    #else:
-                    #    if isinstance(layer, LocalRegionLayer):
-                    #        if is_full_buffer[idx] is None:
-                    #            is_full_buffer[idx] = is_full_buffer[src_idx]
-                    #        else:
-                    #            is_full_buffer[idx] \
-                    #                = (is_full_buffer[idx] and is_full_buffer[src_idx]) or isinstance(layer, ConcatLayer)
-                    #    else:
-                    #        if not is_full_buffer[src_idx]:
-                    #            is_full_buffer[idx] = True
-                    #        else:
-                    #            is_full_buffer[idx] = False
-                    print(f'  src_idx:{src_idx}')
-                    print(f'  src_is_fullbuffer:{is_full_buffer[src_idx]}')
-                    print(f'  is_fullbuffer:{is_full_buffer[idx]}')
-                    layer_fmap_size[idx] += layer_ofmap_size[src_idx] * (1 if is_full_buffer[src_idx] else 32/self.resource.precision)
-                    layer_add_one_line_size[idx] += layer_add_one_oh_line_size[src_idx] * (1 if is_full_buffer[src_idx] else 32/self.resource.precision)
-                    print(f'  src_layer_ofmap_size[{src_idx}]={layer_ofmap_size[src_idx]}')
-                    print(f'  src_layer_add_one_oh_line_size[{src_idx}]={layer_add_one_oh_line_size[src_idx]}')
-                    print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
-                    print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
 
-
-                #for src_dix in self.dag_prev_dict[idx]:
-                #    if isinstance(layer, LocalRegionLayer):
-                #        is_full_buffer[src_idx] = is_full_buffer[idx]
-
-                for src in self.network.prevs(l):
-                    if src in ext_inputs:
-                        if src is None:
-                            src_layer = self.network.input_layer()
-                        else:
-                            src_layer = self.network[src]
-                        if not isinstance(layer, LocalRegionLayer):
-                            layer_fmap_size[idx] += \
-                                (src_layer.nofm
-                                 * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
-                                 * layer.wifm)
-                            layer_add_one_line_size[idx] += \
-                                (src_layer.nofm
-                                 * sca.s_h * layer.hstd
-                                 * layer.wifm)
-                        else:
-                            k = min(max(self.loop_lower_bound(src_layer).k, self.loop_lower_bound(src_layer).c), src_layer.nofm)
-                            if is_full_buffer[idx]:
-                                layer_fmap_size[idx] += src_layer.nofm * minsize.h * layer.wofm
-                                layer_add_one_line_size[idx] += src_layer.nofm * sca.s_h * layer.wofm
-                                layer_add_one_oh_line_size[idx] += src_layer.nofm * sca.s_h * layer.wofm
-                            else:
-                                layer_fmap_size[idx] += k * minsize.h * layer.wofm
-                                layer_add_one_line_size[idx] += k*sca.s_h * layer.wofm
-                                layer_add_one_oh_line_size[idx] += k * sca.s_h * layer.wofm
-
-
-                #if isinstance(layer, ConvLayer):
                 print('  is_full_buffer:',is_full_buffer[idx])
                 if is_full_buffer[idx]:
                     print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
@@ -1492,6 +1450,69 @@ class InterLayerReuse(object):
                     print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
                     print(f'  layer_ofmap_size[{idx}]={layer_ofmap_size[idx]}')
                     print(f'  layer_one_oh_line_size[{idx}]={layer_add_one_oh_line_size[idx]}')
+
+                precision = 1
+                prev_out = 0
+                prev_one_line = 0
+                for src_idx in self.dag_prev_dict[idx]:
+                    print(f'  layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                    print(f'  layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
+                    #assert is_full_buffer[src_idx] is not None
+                    #if self.womincost:
+                    #    is_full_buffer[idx] = True
+                    #else:
+                    #    if isinstance(layer, LocalRegionLayer):
+                    #        if is_full_buffer[idx] is None:
+                    #            is_full_buffer[idx] = is_full_buffer[src_idx]
+                    #        else:
+                    #            is_full_buffer[idx] \
+                    #                = (is_full_buffer[idx] and is_full_buffer[src_idx]) or isinstance(layer, ConcatLayer)
+                    #    else:
+                    #        if not is_full_buffer[src_idx]:
+                    #            is_full_buffer[idx] = True
+                    #        else:
+                    #            is_full_buffer[idx] = False
+                    print(f'  src_idx:{src_idx}')
+                    print(f'  src_is_fullbuffer:{is_full_buffer[src_idx]}')
+                    print(f'  is_fullbuffer:{is_full_buffer[idx]}')
+                    if not is_full_buffer[src_idx] and not isinstance(layer, LocalRegionLayer) :
+                        precision = 2
+                        
+                    prev_out += layer_ofmap_size[src_idx]
+                    prev_one_line += layer_add_one_oh_line_size[src_idx]
+                    print(f'  src_layer_ofmap_size[{src_idx}]={layer_ofmap_size[src_idx]}')
+                    print(f'  src_layer_add_one_oh_line_size[{src_idx}]={layer_add_one_oh_line_size[src_idx]}')
+                    print(f'  after layer_fmap_size[{idx}]={layer_fmap_size[idx]}')
+                    print(f'  after layer_add_one_line_size[{idx}]={layer_add_one_line_size[idx]}')
+
+                for src in self.network.prevs(l):
+                    if src in ext_inputs:
+                        if src is None:
+                            src_layer = self.network.input_layer()
+                        else:
+                            src_layer = self.network[src]
+                        if not isinstance(layer, LocalRegionLayer):
+                            prev_out += \
+                                (src_layer.nofm
+                                 * min(((minsize.h - 1) * layer.hstd + layer.hfil), src_layer.hofm)
+                                 * layer.wifm)
+                            prev_one_line += \
+                                (src_layer.nofm
+                                 * sca.s_h * layer.hstd
+                                 * layer.wifm)
+                        else:
+                            k = min(max(self.loop_lower_bound(src_layer).k, self.loop_lower_bound(src_layer).c), src_layer.nofm)
+                            if is_full_buffer[idx]:
+                                prev_out += src_layer.nofm * minsize.h * layer.wofm
+                                prev_one_line += src_layer.nofm * sca.s_h * layer.wofm
+                            else:
+                                prev_out += k * minsize.h * layer.wofm
+                                prev_one_line += k*sca.s_h * layer.wofm
+
+                layer_fmap_size[idx] = layer_fmap_size[idx] * precision + prev_out
+                layer_add_one_line_size[idx] = layer_add_one_line_size[idx] * precision + prev_one_line
+
+                #if isinstance(layer, ConvLayer):
 
             max_kernel_size = 0
             print('calc kernel_size')
