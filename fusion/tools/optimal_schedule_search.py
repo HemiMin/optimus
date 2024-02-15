@@ -40,6 +40,8 @@ def do_scheduling(args):
     # optimal schedule
     sg = ScheduleGenerator(network, resource, cost_model, loop_lower_bound)
     schedule_info_list, _ = sg.schedule_search()
+    print('schedule_info_list')
+    print(schedule_info_list)
     cost, access = res_parse(schedule_info_list,
                         resource, cost_model,
                         sg, network,

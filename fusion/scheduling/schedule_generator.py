@@ -51,6 +51,7 @@ class ScheduleGenerator(object):
             res_map_1, res_1 = self.others(dptable, 1)
             res_map = [res_map_1, res_map_0]
             res = [res_1, res_0]
+            print('others')
 
         else:
             dptable = dict()
@@ -60,6 +61,8 @@ class ScheduleGenerator(object):
                 res_map, res = self.hafs([dsv], dptable)
             else:
                 res_map, res = self.hafs(list(self.network.firsts()), dptable)
+            print('res_map')
+            print(res_map)
 
         return res_map, res
 
@@ -96,14 +99,38 @@ class ScheduleGenerator(object):
         optimal_s, min_cost = [[]], float("inf")
 
         masked = self._reachable(nx)
+        print(f'nx:{nx}')
         for c in sorted(nx):
             if masked.get(c, False):
                 continue
             fuse_node = fusion_group + [c]
+            print(f'fuse_node:{fuse_node}')
             s, cost = self.hafs(fuse_node, dptable)
-            if cost < min_cost:
-                min_cost = cost
-                optimal_s = s
+            if self.network.net_name == "VGG":
+                if cost == float("inf"):
+                    cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule(fuse_node)
+                    if cost < min_cost:
+                        min_cost = cost
+                        optimal_s = [[vertex_list, loop_block, loop_order, sfil_fit]]
+                    print(f'optimal_s0:{optimal_s}')
+                else:
+                    if cost < min_cost:
+                        min_cost = cost
+                        optimal_s = s
+                print(f'optimal_s1:{optimal_s}')
+            else:
+            #if cost == float("inf"):
+            #    cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule(fuse_node)
+            #    if cost < min_cost:
+            #        min_cost = cost
+            #        optimal_s = [[vertex_list, loop_block, loop_order, sfil_fit]]
+            #    print(f'optimal_s0:{optimal_s}')
+            #else:
+                if cost < min_cost:
+                    min_cost = cost
+                    optimal_s = s
+                print(f'optimal_s1:{optimal_s}')
+            break
 
         if not self._is_dsv(fusion_group):
             if len(nx) == 1:
@@ -111,10 +138,40 @@ class ScheduleGenerator(object):
             else:
                 dsv = self._dsv(nx)
             s, cost = self.hafs([dsv], dptable)
-            g_cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule(g)
-            if cost + g_cost < min_cost:
-                min_cost = cost + g_cost
-                optimal_s = [[vertex_list, loop_block, loop_order, g_cost, sfil_fit]] + s
+            if self.network.net_name == "VGG":
+                if cost == float("inf"):
+                    g_cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule([dsv])
+                    s, cost = [[vertex_list, loop_block, loop_order, g_cost, sfil_fit]], g_cost
+                    g_cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule(g)
+                    if cost + g_cost < min_cost:
+                        min_cost = cost + g_cost
+                        optimal_s = [[vertex_list, loop_block, loop_order, g_cost, sfil_fit]] + s
+                    print(f'optimal_s2:{optimal_s}')
+                else:
+                    g_cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule(g)
+                    print(f'loop_block: {loop_block}')
+                    print(f'mincost:{min_cost}, cost:{cost}, g_cost:{g_cost}')
+                    if cost + g_cost < min_cost:
+                        min_cost = cost + g_cost
+                        optimal_s = [[vertex_list, loop_block, loop_order, g_cost, sfil_fit]] + s
+                    print(f'optimal_s3:{optimal_s}')
+            else:
+            #if cost == float("inf"):
+            #    g_cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule([dsv])
+            #    s, cost = [[vertex_list, loop_block, loop_order, g_cost, sfil_fit]], g_cost
+            #    g_cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule(g)
+            #    if cost + g_cost < min_cost:
+            #        min_cost = cost + g_cost
+            #        optimal_s = [[vertex_list, loop_block, loop_order, g_cost, sfil_fit]] + s
+            #    print(f'optimal_s2:{optimal_s}')
+            #else:
+                g_cost, loop_block, loop_order, vertex_list, sfil_fit = self._find_schedule(g)
+                print(f'loop_block: {loop_block}')
+                print(f'mincost:{min_cost}, cost:{cost}, g_cost:{g_cost}')
+                if cost + g_cost < min_cost:
+                    min_cost = cost + g_cost
+                    optimal_s = [[vertex_list, loop_block, loop_order, g_cost, sfil_fit]] + s
+                print(f'optimal_s3:{optimal_s}')
 
         dptable[dpkey] = optimal_s, min_cost
         return optimal_s, min_cost
@@ -409,6 +466,7 @@ def _bhw_factorization(layer, n, loop_lower_bound):
             if b * h * w > 0:
                 break
         n -= 1
+        print(f'n:{n},b:{b},h:{h},w:{w}')
     n += 1
     return int(n), int(b), int(h), int(w)
 
@@ -439,6 +497,7 @@ def loop_order_generator(layer, loop_block, irrelevant):
 def blocking_upper_bound(layer, block, q, resource, loop_lower_bound):
 
     k, c, bhw, r, d = block
+    b=1
     q0, q1, q2 = q
     s = resource.buffer(1).capacity
 
@@ -512,6 +571,7 @@ def blocking_lower_bound(layer, block, q, resource, loop_lower_bound):
     k, c, bhw, r, d = block
     q0, q1, q2 = q
     s = resource.buffer(1).capacity
+    b=1
 
     bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
     if k < loop_lower_bound.k and c < loop_lower_bound.c and bhw < bhw_lower_bound:
@@ -574,13 +634,16 @@ def _psumsr_v2(layer, resource, loop_lower_bound):
     q2 = (p2[2] + p1[2])
     s = resource.buffer(1).capacity
 
-    bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
-    bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    #bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
+    #bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    bhw_lower_bound = loop_lower_bound.h
+    bhw_upper_bound = layer.hofm
+
     args = (q0, q1, q2)
     cons_args = (loop_lower_bound.k, layer.nofm,
                  loop_lower_bound.c, layer.nifm,
                  bhw_lower_bound, bhw_upper_bound,
-                 layer.hfil*layer.wfil, 1, layer.hstd*layer.wstd, s)
+                 layer.hfil, 1, layer.hstd, s)
     # constrain
     cons = con(cons_args)
 
@@ -591,9 +654,11 @@ def _psumsr_v2(layer, resource, loop_lower_bound):
     # optimize
     res = minimize(fun(args), x0, method='SLSQP', constraints=cons)
 
-    k, c, bhw = res.x
-    k, c, bhw = math.floor(k), math.floor(c), math.floor(bhw)
-    bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
+    k, c, h = res.x
+    k, c, h = math.floor(k), math.floor(c), math.floor(h)
+    w = layer.wofm
+    b=1
+    #bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
     loop_block = [d, r, c, w, h, k, b]
     loop_order = [le.NUM - 1] * le.NUM
     if not res.success or any(i <= 0 for i in loop_block):
@@ -602,17 +667,18 @@ def _psumsr_v2(layer, resource, loop_lower_bound):
     else:
         loop_order = loop_order_generator(layer, loop_block, irrelevant)
 
-    q = (q0 / k + q1 / c + q2 / bhw) * layer.total_ops + (p2[1]-p1[1]) * layer.total_ofmap_size
+    q = (q0 / k + q1 / c + q2 / h) * layer.total_ops + (p2[1]-p1[1]) * layer.total_ofmap_size
 
     if_glb_access_cost = p1[0] * layer.hstd * layer.wstd * layer.total_ops / (r * d * k)
     of_glb_access_cost = 2 * p1[1] * layer.total_ops / (r * d * c) - p1[1] * layer.total_ofmap_size
-    fi_glb_access_cost = p1[2] * layer.total_ops / bhw
+    fi_glb_access_cost = p1[2] * layer.total_ops / h
     if_dram_access_cost = p2[0] * layer.hstd * layer.wstd * layer.total_ops / (r * d * k)
     of_dram_access_cost = p2[1] * layer.total_ofmap_size
-    fi_dram_access_cost = p2[2] * layer.total_ops / bhw
+    fi_dram_access_cost = p2[2] * layer.total_ops / h
     glb_access_cost = [if_glb_access_cost, of_glb_access_cost, fi_glb_access_cost]
     dram_access_cost = [if_dram_access_cost, of_dram_access_cost, fi_dram_access_cost]
 
+    print(f'psumsr_v2:{loop_block}')
     return q, loop_block, loop_order, glb_access_cost, dram_access_cost
 
 
@@ -628,13 +694,15 @@ def _filterr_v2(layer, resource, loop_lower_bound):
     q2 = p1[2]
     s = resource.buffer(1).capacity
 
-    bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
-    bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    #bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
+    #bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    bhw_lower_bound = loop_lower_bound.h
+    bhw_upper_bound = layer.hofm
     args = (q0, q1, q2)
     cons_args = (loop_lower_bound.k, layer.nofm,
                  loop_lower_bound.c, layer.nifm,
                  bhw_lower_bound, bhw_upper_bound,
-                 r*d, 1, layer.hstd*layer.wstd, s)
+                 r, 1, layer.hstd, s)
     # constrain
     cons = con(cons_args)
 
@@ -645,9 +713,11 @@ def _filterr_v2(layer, resource, loop_lower_bound):
     # optimize
     res = minimize(fun(args), x0, method='SLSQP', constraints=cons)
 
-    k, c, bhw = res.x
-    k, c, bhw = math.floor(k), math.floor(c), math.floor(bhw)
-    bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
+    k, c, h = res.x
+    k, c, h = math.floor(k), math.floor(c), math.floor(h)
+    w = layer.wofm
+    #bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
+    b=1
     loop_block = [d, r, c, w, h, k, b]
     loop_order = [le.NUM - 1] * le.NUM
     if not res.success or any(i <= 0 for i in loop_block):
@@ -656,18 +726,19 @@ def _filterr_v2(layer, resource, loop_lower_bound):
     else:
         loop_order = loop_order_generator(layer, loop_block, irrelevant)
 
-    q = (q0 / k + q1 / c + q2 / bhw) * layer.total_ops + p2[2] * layer.total_filter_size \
+    q = (q0 / k + q1 / c + q2 / h) * layer.total_ops + p2[2] * layer.total_filter_size \
         - (p2[1] + p1[1]) * layer.total_ofmap_size
 
     if_glb_access_cost = p1[0] * layer.hstd * layer.wstd * layer.total_ops / (r * d * k)
     of_glb_access_cost = 2 * p1[1] * layer.total_ops / (r * d * c) - p1[1] * layer.total_ofmap_size
-    fi_glb_access_cost = p1[2] * layer.total_ops / bhw
+    fi_glb_access_cost = p1[2] * layer.total_ops / h
     if_dram_access_cost = p2[0] * layer.hstd * layer.wstd * layer.total_ops / (r * d * k)
     of_dram_access_cost = 2 * p2[1] * layer.total_ops / (r * d * c) - p2[1] * layer.total_ofmap_size
     fi_dram_access_cost = p2[2] * layer.total_filter_size
     glb_access_cost = [if_glb_access_cost, of_glb_access_cost, fi_glb_access_cost]
     dram_access_cost = [if_dram_access_cost, of_dram_access_cost, fi_dram_access_cost]
 
+    print(f'filterr_v2:{loop_block}')
     return q, loop_block, loop_order, glb_access_cost, dram_access_cost
 
 
@@ -684,13 +755,15 @@ def _ifmapr_v2(layer, resource, loop_lower_bound):
     q2 = p2[2] + p1[2]
     s = resource.buffer(1).capacity
 
-    bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
-    bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    #bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
+    #bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    bhw_lower_bound = loop_lower_bound.h
+    bhw_upper_bound = layer.hofm
     args = (q0, q1, q2)
     cons_args = (loop_lower_bound.k, layer.nofm,
                  loop_lower_bound.c, layer.nifm,
                  bhw_lower_bound, bhw_upper_bound,
-                 r*d, 1, layer.hstd*layer.wstd, s)
+                 r, 1, layer.hstd, s)
     # constrain
     cons = con(cons_args)
 
@@ -701,9 +774,11 @@ def _ifmapr_v2(layer, resource, loop_lower_bound):
     # optimize
     res = minimize(fun(args), x0, method='SLSQP', constraints=cons)
 
-    k, c, bhw = res.x
-    k, c, bhw = math.floor(k), math.floor(c), math.floor(bhw)
-    bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
+    k, c, h = res.x
+    k, c, h = math.floor(k), math.floor(c), math.floor(h)
+    w = layer.wofm
+    b=1
+    #bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
     loop_block = [d, r, c, w, h, k, b]
     loop_order = [le.NUM - 1] * le.NUM
     if not res.success or any(i <= 0 for i in loop_block):
@@ -712,18 +787,19 @@ def _ifmapr_v2(layer, resource, loop_lower_bound):
     else:
         loop_order = loop_order_generator(layer, loop_block, irrelevant)
 
-    q = (q0 / k + q1 / c + q2 / bhw) * layer.total_ops + p2[0] * layer.total_ifmap_size \
+    q = (q0 / k + q1 / c + q2 / h) * layer.total_ops + p2[0] * layer.total_ifmap_size \
         - (p2[1] + p1[1]) * layer.total_ofmap_size
 
     if_glb_access_cost = p1[0] * layer.hstd * layer.wstd * layer.total_ops / (r * d * k)
     of_glb_access_cost = 2 * p1[1] * layer.total_ops / (r * d * c) - p1[1] * layer.total_ofmap_size
-    fi_glb_access_cost = p1[2] * layer.total_ops / bhw
+    fi_glb_access_cost = p1[2] * layer.total_ops / h
     if_dram_access_cost = p2[0] * layer.total_ifmap_size
     of_dram_access_cost = 2 * p2[1] * layer.total_ops / (r * d * c) - p2[1] * layer.total_ofmap_size
-    fi_dram_access_cost = p2[2] * layer.total_ops / bhw
+    fi_dram_access_cost = p2[2] * layer.total_ops / h
     glb_access_cost = [if_glb_access_cost, of_glb_access_cost, fi_glb_access_cost]
     dram_access_cost = [if_dram_access_cost, of_dram_access_cost, fi_dram_access_cost]
 
+    print(f'ifmapr:{loop_block}')
     return q, loop_block, loop_order, glb_access_cost, dram_access_cost
 
 
@@ -740,13 +816,15 @@ def _cwr_c_v2(layer, resource, loop_lower_bound):
 
     s = resource.buffer(1).capacity
 
-    bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
-    bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    #bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
+    #bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    bhw_lower_bound = loop_lower_bound.h
+    bhw_upper_bound = layer.hofm
     args = (q0, q1, q2)
     cons_args = (loop_lower_bound.k, layer.nofm,
                  layer.nifm, layer.nifm,
                  bhw_lower_bound, bhw_upper_bound,
-                 r*d, 1, layer.hstd*layer.wstd, s)
+                 r, 1, layer.hstd, s)
     # constrain
     cons = con(cons_args)
 
@@ -757,9 +835,11 @@ def _cwr_c_v2(layer, resource, loop_lower_bound):
     # optimize
     res = minimize(fun(args), x0, method='SLSQP', constraints=cons)
 
-    k, c, bhw = res.x
-    k, c, bhw = math.floor(k), math.floor(c), math.floor(bhw)
-    bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
+    k, c, h = res.x
+    k, c, h = math.floor(k), math.floor(c), math.floor(h)
+    w = layer.wofm
+    b=1
+    #bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
     loop_block = [d, r, c, w, h, k, b]
     loop_order = [le.NUM - 1] * le.NUM
     if not res.success or any(i <= 0 for i in loop_block):
@@ -768,18 +848,19 @@ def _cwr_c_v2(layer, resource, loop_lower_bound):
     else:
         loop_order = loop_order_generator(layer, loop_block, irrelevant)
 
-    q = (q0 / k + q1 / c + q2 / bhw) * layer.total_ops \
+    q = (q0 / k + q1 / c + q2 / h) * layer.total_ops \
         + p2[0] * layer.total_ifmap_size + (p2[1] - p1[1]) * layer.total_ofmap_size
 
     if_glb_access_cost = p1[0] * layer.hstd * layer.wstd * layer.total_ops / (r * d * k)
     of_glb_access_cost = 2 * p1[1] * layer.total_ops / (r * d * c) - p1[1] * layer.total_ofmap_size
-    fi_glb_access_cost = p1[2] * layer.total_ops / bhw
+    fi_glb_access_cost = p1[2] * layer.total_ops / h
     if_dram_access_cost = p2[0] * layer.total_ifmap_size
     of_dram_access_cost = p2[1] * layer.total_ofmap_size
-    fi_dram_access_cost = p2[2] * layer.total_ops / bhw
+    fi_dram_access_cost = p2[2] * layer.total_ops / h
     glb_access_cost = [if_glb_access_cost, of_glb_access_cost, fi_glb_access_cost]
     dram_access_cost = [if_dram_access_cost, of_dram_access_cost, fi_dram_access_cost]
 
+    print(f'cwr_c_v2:{loop_block}')
     return q, loop_block, loop_order, glb_access_cost, dram_access_cost
 
 
@@ -798,13 +879,15 @@ def _cwr_k_v2(layer, resource, loop_lower_bound):
     s = resource.buffer(1).capacity
     print('s:',s)
 
-    bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
-    bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    #bhw_lower_bound = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
+    #bhw_upper_bound = layer.nimg * layer.hofm * layer.wofm
+    bhw_lower_bound = loop_lower_bound.h
+    bhw_upper_bound = layer.hofm
     args = (q0, q1, q2)
     cons_args = (layer.nofm, layer.nofm,
                  loop_lower_bound.c, layer.nifm,
                  bhw_lower_bound, bhw_upper_bound,
-                 r*d, 1, layer.hstd*layer.wstd, s)
+                 r, 1, layer.hstd, s)
     # constrain
     cons = con(cons_args)
 
@@ -815,9 +898,11 @@ def _cwr_k_v2(layer, resource, loop_lower_bound):
     # optimize
     res = minimize(fun(args), x0, method='SLSQP', constraints=cons)
 
-    k, c, bhw = res.x
-    k, c, bhw = math.floor(k), math.floor(c), math.floor(bhw)
-    bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
+    k, c, h = res.x
+    k, c, h = math.floor(k), math.floor(c), math.floor(h)
+    b=1
+    w = layer.wofm
+    #bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
     loop_block = [d, r, c, w, h, k, b]
     loop_order = [le.NUM - 1] * le.NUM
     if not res.success or any(i <= 0 for i in loop_block):
@@ -826,18 +911,19 @@ def _cwr_k_v2(layer, resource, loop_lower_bound):
     else:
         loop_order = loop_order_generator(layer, loop_block, irrelevant)
 
-    q = (q0 / k + q1 / c + q2 / bhw) * layer.total_ops \
+    q = (q0 / k + q1 / c + q2 / h) * layer.total_ops \
         + p2[0] * layer.total_ifmap_size + (p2[1] - p1[1]) * layer.total_ofmap_size
 
     if_glb_access_cost = p1[0] * layer.hstd * layer.wstd * layer.total_ops / (r * d * k)
     of_glb_access_cost = 2 * p1[1] * layer.total_ops / (r * d * c) - p1[1] * layer.total_ofmap_size
-    fi_glb_access_cost = p1[2] * layer.total_ops / bhw
+    fi_glb_access_cost = p1[2] * layer.total_ops / h
     if_dram_access_cost = p2[0] * layer.total_ifmap_size
     of_dram_access_cost = p2[1] * layer.total_ofmap_size
-    fi_dram_access_cost = p2[2] * layer.total_ops / bhw
+    fi_dram_access_cost = p2[2] * layer.total_ops / h
     glb_access_cost = [if_glb_access_cost, of_glb_access_cost, fi_glb_access_cost]
     dram_access_cost = [if_dram_access_cost, of_dram_access_cost, fi_dram_access_cost]
 
+    print(f'cwr_k_v2:{loop_block}')
     return q, loop_block, loop_order, glb_access_cost, dram_access_cost
 
 
@@ -849,38 +935,56 @@ def _psumsr_v1(layer, capacity, loop_lower_bound):
     c = loop_lower_bound.c
     r = layer.hfil
     d = layer.wfil
-    a = layer.hstd * layer.wstd * (c + 1) / 2
-    f = r * d / (layer.hstd * layer.wstd)
+    a = (layer.hstd * layer.wstd * (c + 1) / 2 ) * 4
+    f = (r * d / (layer.hstd * layer.wstd)) * 4
     s = capacity
 
+    cc = math.ceil(c/32)*32
+
     k = max(math.sqrt(s/f + a**2) - a, 1)
-    bhw = math.floor(k * r * d / a)
-    k = math.floor(k)
+    kk = math.ceil(k/32)*32
+    h = math.floor(kk * r * d / a)
+    k = math.floor(kk)
+    w = layer.wofm
+    print('psumsr')
 
     # upper bound
-    if k > layer.nofm and bhw > layer.nimg * layer.hofm * layer.wofm:
+    if k > layer.nofm and h > layer.hofm:
         k = layer.nofm
-        bhw = layer.nimg * layer.hofm * layer.wofm
+        h = layer.hofm
+        print('upperbound1')
     elif k > layer.nofm:
         k = layer.nofm
-        bhw = min(math.floor((s-r*d*c*k)/(k+c*layer.hstd*layer.wstd)), layer.nimg * layer.hofm * layer.wofm)
-    elif bhw > layer.nimg * layer.hofm * layer.wofm:
-        bhw = layer.nimg * layer.hofm * layer.wofm
-        k = min(math.floor((s-bhw*c*layer.hstd*layer.wstd)/(bhw+r*d*c)), layer.nofm)
+        kk = math.ceil(k/32)*32
+        cc = math.ceil(c/32)*32
+        h = min(math.floor((s-(r*d*cc*kk*4))/(kk*4+cc*layer.hstd*w)), layer.hofm)
+        print('upperbound2')
+    elif h > layer.hofm:
+        h = layer.hofm
+        cc = math.ceil(c/32)*32
+        k = min(math.floor((s-h*cc*layer.hstd*w*layer.wstd)/((h*w)+r*d*cc)), layer.nofm)
+        print('upperbound3')
 
     # lower bound
-    if k * bhw > loop_lower_bound.k * loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w:
-        if k < loop_lower_bound.k and bhw > loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w:
+    if k * h > loop_lower_bound.k * loop_lower_bound.h:
+        if k < loop_lower_bound.k and h > loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w:
             k = loop_lower_bound.k
-            bhw = min(math.floor((s - r * d * c * k) / (k + c * layer.hstd * layer.wstd)),
+            kk = math.ceil(k/32)*32
+            cc = math.ceil(c/32)*32
+            h = min(math.floor((s - r * d * cc * kk*4) / (kk + cc * layer.hstd * layer.wstd)),
                       layer.nimg * layer.hofm * layer.wofm)
-        elif k > loop_lower_bound.k and bhw < loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w:
-            bhw = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
-            k = min(math.floor((s - bhw * c * layer.hstd * layer.wstd) / (bhw + r * d * c)), layer.nofm)
+            print('upperbound4')
+        elif k > loop_lower_bound.k and h < loop_lower_bound.h:
+            h = loop_lower_bound.h
+            cc = math.ceil(c/32)*32
+            k = min(math.floor((s - 4*h*w * cc * layer.hstd * layer.wstd) / (h*w + r * d * cc)), layer.nofm)
+            print('upperbound5')
 
-    bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
+    b=1
+    #bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
+    kk = math.ceil(k/32)*32
 
-    c = min(math.floor((s - bhw*k) / (bhw*layer.hstd*layer.wstd + r*d*k)), layer.nifm)
+    c = min(math.floor((s - h*w*kk) / (h*w*layer.hstd*layer.wstd + r*d*kk)), layer.nifm)
 
     loop_block = [d, r, c, w, h, k, b]
     loop_order = [le.NUM - 1] * le.NUM
@@ -889,9 +993,11 @@ def _psumsr_v1(layer, capacity, loop_lower_bound):
     else:
         loop_order = loop_order_generator(layer, loop_block, irrelevant)
 
-    rho = bhw * k * r * d / (bhw * layer.hstd * layer.wstd + k * r * d)
-    q = math.ceil(layer.total_ops / rho) + layer.total_ofmap_size
+    rho = h*w * kk * r * d / (h*w * layer.hstd * layer.wstd + kk * r * d)
+    #q = math.ceil(layer.total_ops / rho) + layer.total_ofmap_size
+    q = float("inf")
 
+    print(f'psumsr_v1:{loop_block}')
     return q, loop_block, loop_order
 
 
@@ -904,12 +1010,22 @@ def _cwr_c_v1(layer, capacity, loop_lower_bound):
     k = loop_lower_bound.k
     r = layer.hfil
     d = layer.wfil
+    w = layer.wofm
+    b=1
+    inw = min((w-1)*layer.wstd+r, layer.wifm)
+    cc = math.ceil(c/32)*32
+    kk = math.ceil(k/32)*32
+    add_one_line = layer.hstd * cc * inw + w*kk
+    min_fm = r*cc*inw + w*kk + k*cc*r*d
 
-    s = capacity - k * c * r * d
-    rho = min(math.ceil(s / (c * layer.hstd * layer.wstd + k)), layer.nimg * layer.hofm * layer.wofm)
-    rho, b, h, w = _bhw_factorization(layer, rho, loop_lower_bound)
+    #s = capacity - k * c * r * d
+    s = capacity - min_fm
+    #rho = min(math.ceil(s / (c * layer.hstd * layer.wstd + k)), layer.nimg * layer.hofm * layer.wofm)
+    h = min(math.ceil(s / (add_one_line)), layer.hofm)
+    #rho, b, h, w = _bhw_factorization(layer, rho, loop_lower_bound)
 
-    k = min(math.ceil((capacity - b*h*w*c*layer.hstd*layer.wstd) / (b*h*w + r*d*c)), layer.nofm)
+    #k = min(math.ceil((capacity - b*h*w*c*layer.hstd*layer.wstd) / (b*h*w + r*d*c)), layer.nofm)
+    #k = min(math.ceil((capacity - b*h*w*c*layer.hstd*layer.wstd) / (b*h*w + r*d*c)), layer.nofm)
     loop_block = [d, r, c, w, h, k, b]
     loop_order = [le.NUM - 1] * le.NUM
     if s < 0 or any(i <= 0 for i in loop_block):
@@ -917,8 +1033,9 @@ def _cwr_c_v1(layer, capacity, loop_lower_bound):
     else:
         loop_order = loop_order_generator(layer, loop_block, irrelevant)
 
-    q = layer.total_ifmap_size + math.ceil(layer.total_ops / rho) + layer.total_ofmap_size
+    q = layer.total_ifmap_size + math.ceil(layer.total_ops / h) + layer.total_ofmap_size
 
+    print(f'cwr_c_v1:{loop_block}')
     return q, loop_block, loop_order
 
 
@@ -932,22 +1049,31 @@ def _cwr_k_v1(layer, capacity, loop_lower_bound):
     r = layer.hfil
     d = layer.wfil
 
-    s = capacity - k * c * r * d
+    w = layer.wofm
+    b=1
+    inw = min((w-1)*layer.wstd+r, layer.wifm)
+    cc = math.ceil(c/32)*32
+    kk = math.ceil(k/32)*32
+    add_one_line = layer.hstd * cc * inw + w*kk
+    min_fm = r*cc*inw + w*kk + k*cc*r*d
+
+    #s = capacity - k * c * r * d
+    s = capacity - min_fm
     print('s(',s,')/capacity(',capacity,')')
 
-    rho = min(math.ceil(s / (c * layer.hstd * layer.wstd + k)), layer.nimg * layer.hofm * layer.wofm)
+    #rho = min(math.ceil(s / (c * layer.hstd * layer.wstd + k)), layer.nimg * layer.hofm * layer.wofm)
+    h = min(math.ceil(s / (add_one_line)), layer.hofm)
     print('irrelevant:',irrelevant)
     print('k,c,r,d:',k,',',c,',',r,',',d,',')
     print('hstd,wstd:',layer.hstd,',',layer.wstd)
-    print('rho:',rho)
     print('min(math.ceil(s / (c * layer.hstd * layer.wstd + k))=',
             math.ceil(s/(c*layer.hstd*layer.wstd+k)),
             ',layer.nimg * layer.hofm * layer.wofm)=',
             layer.nimg * layer.hofm*layer.wofm)
-    rho, b, h, w = _bhw_factorization(layer, rho, loop_lower_bound)
-    print('rho,b,h,w:',rho,',',b,',',h,',',w)
+    #rho, b, h, w = _bhw_factorization(layer, rho, loop_lower_bound)
+    #print('rho,b,h,w:',rho,',',b,',',h,',',w)
 
-    c = min(math.ceil((capacity - b * h * w * k) / (b * h * w * layer.hstd * layer.wstd + r * d * k)), layer.nifm)
+    #c = min(math.ceil((capacity - b * h * w * k) / (b * h * w * layer.hstd * layer.wstd + r * d * k)), layer.nifm)
     loop_block = [d, r, c, w, h, k, b]
     print('loop_block:',loop_block)
     loop_order = [le.NUM - 1] * le.NUM
@@ -956,8 +1082,9 @@ def _cwr_k_v1(layer, capacity, loop_lower_bound):
     else:
         loop_order = loop_order_generator(layer, loop_block, irrelevant)
 
-    q = layer.total_ifmap_size + math.ceil(layer.total_ops / rho) + layer.total_ofmap_size
+    q = layer.total_ifmap_size + math.ceil(layer.total_ops / h) + layer.total_ofmap_size
 
+    print(f'cwr_k_v1:{loop_block}')
     return q, loop_block, loop_order
 
 
@@ -966,9 +1093,9 @@ def _filterr_v1(layer, capacity, loop_lower_bound):
     print('filterr_v1')
     # irrelevant loop: b h w
     irrelevant = [le.W, le.H, le.B]
-    b = loop_lower_bound.b
+    b=1
     h = loop_lower_bound.h
-    w = loop_lower_bound.w
+    w = layer.wofm
     r = layer.hfil
     d = layer.wfil
 
@@ -977,8 +1104,11 @@ def _filterr_v1(layer, capacity, loop_lower_bound):
 
     s = capacity
 
-    k = max(math.sqrt(s / (2 * f) + a ** 2) - a, 1)
-    c = math.ceil(2 * k / (layer.hstd * layer.wstd))
+    k = max(math.sqrt(s / (2 * f*4) + a ** 2) - a, 1)
+    kk = math.ceil(k/32)*32
+
+    c = math.ceil(2 * kk / (layer.hstd * layer.wstd))
+    cc = math.ceil(c/32)*32
 
     # upper bound
     if k > layer.nofm and c > layer.nifm:
@@ -986,19 +1116,19 @@ def _filterr_v1(layer, capacity, loop_lower_bound):
         c = layer.nifm
     elif k > layer.nofm:
         k = layer.nofm
-        c = min(math.ceil((s-b*h*w*k)/(r*d*k+b*h*w*layer.hstd*layer.wstd)), layer.nifm)
+        c = min(math.ceil((s-b*h*w*kk)/(r*d*kk+b*h*w*layer.hstd*layer.wstd)), layer.nifm)
     elif c > layer.nifm:
         c = layer.nifm
-        k = min(math.ceil((s-b*h*w*c*layer.hstd*layer.wstd)/(r*d*c+b*h*w)), layer.nofm)
+        k = min(math.ceil((s-b*h*w*cc*layer.hstd*layer.wstd)/(r*d*cc+b*h*w)), layer.nofm)
 
     # lower bound
     if k * c > loop_lower_bound.k * loop_lower_bound.c:
         if k < loop_lower_bound.k and c > loop_lower_bound.c:
             k = loop_lower_bound.k
-            c = min(math.ceil((s - b * h * w * k) / (r * d * k + b * h * w * layer.hstd * layer.wstd)), layer.nifm)
+            c = min(math.ceil((s - b * h * w * kk) / (r * d * kk + b * h * w * layer.hstd * layer.wstd)), layer.nifm)
         elif k > loop_lower_bound.k and c < loop_lower_bound.c:
             c = loop_lower_bound.c
-            k = min(math.ceil((s - b * h * w * c * layer.hstd * layer.wstd) / (r * d * c + b * h * w)), layer.nofm)
+            k = min(math.ceil((s - b * h * w * cc * layer.hstd * layer.wstd) / (r * d * cc + b * h * w)), layer.nofm)
 
     k = math.floor(k)
 
@@ -1012,6 +1142,7 @@ def _filterr_v1(layer, capacity, loop_lower_bound):
     rho = c * k * r * d / (c * layer.hstd * layer.wstd + (2 * k - 1))
     q = layer.total_filter_size + math.ceil(layer.total_ops / rho)
 
+    print(f'filterr_v1:{loop_block}')
     return q, loop_block, loop_order
 
 
@@ -1024,37 +1155,48 @@ def _ifmapr_v1(layer, capacity, loop_lower_bound):
     d = layer.wfil
     k = loop_lower_bound.k
     f = r * d / (layer.hstd * layer.wstd)
-    a = k * 3 * f / 4
+    a = k * 3 * f 
 
     s = capacity
 
-    bhw = max(math.ceil(math.sqrt(s*f/2 + a**2) - a), 1)
-    c = math.ceil(2 * bhw / (r * d))
+    h = max(math.ceil(math.sqrt(s*f/2 + a**2) - a), 1)
+    b=1
+    w = layer.wofm
+    c = math.ceil(2 * h*w / (r * d))
 
     # upper bound
-    if bhw > layer.nimg * layer.hofm * layer.wofm and c > layer.nifm:
-        bhw = layer.nimg * layer.hofm * layer.wofm
+    if h > layer.hofm and c > layer.nifm:
+        h = layer.hofm
         c = layer.nifm
-    if bhw > layer.nimg * layer.hofm * layer.wofm:
-        bhw = layer.nimg * layer.hofm * layer.wofm
-        c = min(math.ceil((s-bhw*k)/(r*d*k+bhw*layer.hstd*layer.wstd)), layer.nifm)
+        cc = math.ceil(c/32)*32
+    if h > layer.hofm:
+        h = layer.hofm
+        kk = math.ceil(k/32)*32
+        c = min(math.ceil((s-h*w*kk)/(r*d*kk+h*layer.hstd*layer.wstd)), layer.nifm)
     elif c > layer.nifm:
         c = layer.nifm
-        bhw = min(math.ceil((s-r*d*c*k)/(k+c*layer.hstd*layer.wstd)), layer.nimg * layer.hofm * layer.wofm)
+        cc = math.ceil(c/32)*32
+        kk = math.ceil(k/32)*32
+        h = min(math.ceil((s-r*d*cc*kk)/(kk+cc*layer.hstd*layer.wstd)), layer.hofm * layer.wofm)
 
     # lower bound
-    if bhw * c > loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w * loop_lower_bound.c:
-        if bhw < loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w and c > loop_lower_bound.c:
-            bhw = loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w
-            c = min(math.ceil((s - bhw * k) / (r * d * k + bhw * layer.hstd * layer.wstd)), layer.nifm)
-        elif bhw > loop_lower_bound.b * loop_lower_bound.h * loop_lower_bound.w and c < loop_lower_bound.c:
+    if h * c > loop_lower_bound.h * loop_lower_bound.c:
+        if h < loop_lower_bound.h and c > loop_lower_bound.c:
+            h = loop_lower_bound.h
+            cc = math.ceil(c/32)*32
+            kk = math.ceil(k/32)*32
+            c = min(math.ceil((s - h*w * kk) / (r * d * kk + h*w * layer.hstd * layer.wstd)), layer.nifm)
+        elif h > loop_lower_bound.h and c < loop_lower_bound.c:
             c = loop_lower_bound.c
-            bhw = min(math.ceil((s - r * d * c * k) / (k + c * layer.hstd * layer.wstd)),
+            cc = math.ceil(c/32)*32
+            kk = math.ceil(k/32)*32
+            h = min(math.ceil((s - r * d * cc * kk) / (kk + cc * layer.hstd * layer.wstd)),
                       layer.nimg * layer.hofm * layer.wofm)
 
-    bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
+    #bhw, b, h, w = _bhw_factorization(layer, bhw, loop_lower_bound)
 
-    k = min(math.ceil((s - b*h*w*c*layer.hstd*layer.wstd) / (b*h*w + r*d*c)), layer.nofm)
+    cc = math.ceil(c/32)*32
+    k = min(math.ceil((s - b*h*w*cc*layer.hstd*layer.wstd) / (b*h*w + r*d*cc)), layer.nofm)
     loop_block = [d, r, c, w, h, k, b]
     loop_order = [le.NUM - 1] * le.NUM
     if any(i <= 0 for i in loop_block):
@@ -1062,9 +1204,11 @@ def _ifmapr_v1(layer, capacity, loop_lower_bound):
     else:
         loop_order = loop_order_generator(layer, loop_block, irrelevant)
 
-    rho = bhw * c * r * d / (c * r * d + (2 * bhw - 1))
-    q = math.ceil(layer.total_ops / rho) + layer.total_ifmap_size
+    rho = h*w * cc * r * d / (cc * r * d + (2 * h*w - 1))
+    #q = math.ceil(layer.total_ops / rho) + layer.total_ifmap_size
+    q=float("inf")
 
+    print(f'ifmapr_v1:{loop_block}')
     return q, loop_block, loop_order
 
 
@@ -1076,13 +1220,19 @@ def fun(args):
 
 def con(args):
     x1min, x1max, x2min, x2max, x3min, x3max, a, b, c, xmax = args
+    wifm = f'(({x3max}-1)*{c}+{a})'
+    ofmap = f'((math.ceil(x[0]/32)*32) * x[2] *{x3max} * 4)'
+    ifmap = f'((math.ceil(x[1]/32)*32) * (min((x[2]-1)*{c}+{a},{wifm})) * {wifm})'
+    kernel = f'((math.ceil(x[0]/32)*32)*(math.ceil(x[1]/32)*32)*{a}*{a})'
+    bias = f'((math.ceil(x[0]/32)*32) * 4)'
+
     cons = ({'type': 'ineq', 'fun': lambda x: x[0] - x1min},
             {'type': 'ineq', 'fun': lambda x: -x[0] + x1max},
             {'type': 'ineq', 'fun': lambda x: x[1] - x2min},
             {'type': 'ineq', 'fun': lambda x: -x[1] + x2max},
             {'type': 'ineq', 'fun': lambda x: x[2] - x3min},
             {'type': 'ineq', 'fun': lambda x: -x[2] + x3max},
-            {'type': 'ineq', 'fun': lambda x: -(a*x[0]*x[1] + b*x[0]*x[2] + c*x[1]*x[2]) + xmax})
+            {'type': 'ineq', 'fun': lambda x: eval(f'-({ofmap}+{ifmap}+{kernel}+{bias}) + {xmax}')})
     return cons
 
 

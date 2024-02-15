@@ -3,6 +3,7 @@ import math
 from operator import add
 from functools import reduce
 from . import loop_enum as le
+import json
 
 
 def res_parse(schedule_info_list, resource, cost_model, sg, network,
@@ -144,6 +145,7 @@ def res_parse(schedule_info_list, resource, cost_model, sg, network,
     for i in range(5):
         total_costs[i] = total_costs[i] / 1e10
 
+    confs = []
     if is_print:
         for group_info in group_result:
             group = group_info['group']
@@ -156,6 +158,17 @@ def res_parse(schedule_info_list, resource, cost_model, sg, network,
             ops = group_info['ops']
 
             print('---------------------------------------')
+            layers = []
+            for i, l in enumerate(group):
+                block_size = group_info['loop_blocking_list'][i]
+                if block_size is None:
+                    size = {}
+                else:
+                    size = {'IC':block_size[2], 'OW':block_size[3], 
+                            'OH':block_size[4], 'OC':block_size[5]}
+                layers.append({'name':l, 'size':size})
+            confs.append({'depth':len(group), 'layers':layers})
+
             print(group)
             print(group_info['loop_blocking_list'])
             print(group_info['loop_ordering_list'])
@@ -171,6 +184,9 @@ def res_parse(schedule_info_list, resource, cost_model, sg, network,
                 print(costs)
                 print('DRAM access/MAC (1e3):', off_chip * 1000 / ops)
             print('\n')
+         
+        with open('result.json', 'w') as f:
+            json.dump({'conf':confs}, f)
 
         print('============================================')
         print('total DRAM access(MB): ', off_chip_overall * resource.precision / 8 / 1024 / 1024)
